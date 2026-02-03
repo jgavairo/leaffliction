@@ -1,0 +1,59 @@
+import cv2
+import numpy as np
+from pathlib import Path
+
+from albumentations import (
+    HorizontalFlip,
+    Rotate,
+    RandomResizedCrop,
+    RandomBrightnessContrast,
+    GridDistortion,
+    GaussianBlur,
+    Compose,
+)
+
+def augment_class(class_dir: Path, deficit: int, output_dir: Path):
+    """
+    Augment images in the specified class directory to address the deficit.
+
+    Args:
+        class_dir (Path): The class directory to augment images in.
+        deficit (int): The number of images to generate.
+        output_dir (Path): The directory to save augmented images.
+
+    Returns:
+        None
+    """
+    img_extensions = {".jpg", ".jpeg", ".png"}
+    images = [f for f in class_dir.iterdir() if f.suffix.lower() in img_extensions]
+    if not images:
+        return
+
+    augmentations = Compose([
+        HorizontalFlip(p=0.5),
+        Rotate(limit=30, p=0.5),
+        RandomResizedCrop(size=(224, 224), p=0.5),
+        RandomBrightnessContrast(p=0.5),
+        GridDistortion(p=0.5),
+        GaussianBlur(p=0.5),
+    ])
+
+    output_class_dir = output_dir / class_dir.name
+    output_class_dir.mkdir(parents=True, exist_ok=True)
+
+    generated = 0
+    attempts = 0
+    max_attempts = max(deficit * 5, 10)
+    while generated < deficit and attempts < max_attempts:
+        attempts += 1
+        img_path = np.random.choice(images)
+        image = cv2.imread(str(img_path))
+        if image is None:
+            continue
+        augmented = augmentations(image=image)
+        augmented_image = augmented["image"]
+
+        output_path = output_class_dir / f"augmented_{generated}_{img_path.name}"
+        if cv2.imwrite(str(output_path), augmented_image):
+            generated += 1
+    
