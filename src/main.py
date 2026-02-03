@@ -4,6 +4,7 @@ import shutil
 import plots
 from logger import Logger
 from augment import augment_class
+from transform import transform_images
 
 
 if __name__ == "__main__":
@@ -84,6 +85,11 @@ if __name__ == "__main__":
     logger("Pie chart for merged dataset saved.")
     logger("All plots for merged dataset generated successfully.\n\n")
 
-    logger("")
+    logger("Transformation process started...")
+    transformed_dir = Path(args.output_file) / "transformed_data"
+    transformed_dir.mkdir(parents=True, exist_ok=True)
+    for class_dir in merged_class_dirs:
+        transform_images(class_dir, transformed_dir)
+    logger("Transformation process completed.\n\n")
 
     
