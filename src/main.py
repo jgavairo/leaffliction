@@ -84,4 +84,6 @@ if __name__ == "__main__":
     logger("Pie chart for merged dataset saved.")
     logger("All plots for merged dataset generated successfully.\n\n")
 
+    logger("")
+
     
