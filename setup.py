@@ -36,7 +36,7 @@ def main():
             "Distribution",
             "Augmentation",
             "Transformation",
-            "Clean folder",
+            "Clean outputs only",
         ],
         style=style,
     ).ask()
@@ -73,7 +73,7 @@ def main():
 
     dataset_path = None
     output_dir = None
-    if any(step in steps for step in ["Distribution", "Transformation"]):
+    if "Distribution" in steps:
         dataset_path = questionary.text(
             "Dataset path:",
             default="dataset/images",
@@ -137,15 +137,25 @@ def main():
 
         run_command(command)
 
-    if "Transformation" in steps and output_dir:
+    if "Transformation" in steps:
+        default_src = (
+            str(Path(output_dir) / "transformed_data")
+            if output_dir
+            else "dataset/images"
+        )
+        default_dst = (
+            str(Path(output_dir) / "transformed_output")
+            if output_dir
+            else "output/transformed_output"
+        )
         transform_src = questionary.text(
             "Transformation source directory:",
-            default=str(Path(output_dir) / "transformed_data"),
+            default=default_src,
             style=style,
         ).ask()
         transform_dst = questionary.text(
             "Transformation destination directory:",
-            default=str(Path(output_dir) / "transformed_output"),
+            default=default_dst,
             style=style,
         ).ask()
 

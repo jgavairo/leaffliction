@@ -80,13 +80,18 @@ def gaussian_blur(image: np.ndarray) -> np.ndarray:
     return cv2.GaussianBlur(image, (5, 5), 0)
 
 
-def roi_from_mask(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    ys, xs = np.where(mask > 0)
-    if len(xs) == 0 or len(ys) == 0:
-        return image
-    x_min, x_max = xs.min(), xs.max()
-    y_min, y_max = ys.min(), ys.max()
-    return image[y_min:y_max + 1, x_min:x_max + 1]
+def roi_objects(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    output = image.copy()
+    if not contours:
+        return output
+    largest = max(contours, key=cv2.contourArea)
+    overlay = output.copy()
+    cv2.drawContours(overlay, [largest], -1, (0, 255, 0), thickness=-1)
+    output = cv2.addWeighted(overlay, 0.35, output, 0.65, 0)
+    x, y, w, h = cv2.boundingRect(largest)
+    cv2.rectangle(output, (x, y), (x + w, y + h), (255, 0, 0), 2)
+    return output
 
 
 def object_analysis(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -95,6 +100,11 @@ def object_analysis(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     if contours:
         largest = max(contours, key=cv2.contourArea)
         cv2.drawContours(output, [largest], -1, (0, 255, 0), 2)
+        moments = cv2.moments(largest)
+        if moments["m00"] != 0:
+            cx = int(moments["m10"] / moments["m00"])
+            cy = int(moments["m01"] / moments["m00"])
+            cv2.circle(output, (cx, cy), 4, (255, 0, 255), -1)
     return output
 
 
@@ -135,30 +145,42 @@ def process_image(image_path: Path, output_dir: Path | None, show: bool):
 
     mask = grabcut_mask(image)
     masked = apply_mask(image, mask)
-    blurred = gaussian_blur(masked)
-    roi = roi_from_mask(masked, mask)
+    blurred = gaussian_blur(image)
+    roi = roi_objects(image, mask)
     analysis = object_analysis(masked, mask)
     landmarks = pseudo_landmarks(masked, mask)
+    mask_vis = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
 
     if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(output_dir / "original.png"), image)
         cv2.imwrite(str(output_dir / "gaussian_blur.png"), blurred)
-        cv2.imwrite(str(output_dir / "mask.png"), masked)
-        cv2.imwrite(str(output_dir / "roi.png"), roi)
+        cv2.imwrite(str(output_dir / "mask.png"), mask_vis)
+        cv2.imwrite(str(output_dir / "roi_objects.png"), roi)
         cv2.imwrite(str(output_dir / "object_analysis.png"), analysis)
         cv2.imwrite(str(output_dir / "pseudolandmarks.png"), landmarks)
         color_histogram(image, mask, output_dir / "hist_rgb.png")
 
     if show:
-        cv2.imshow("Original", image)
-        cv2.imshow("Gaussian Blur", blurred)
-        cv2.imshow("Mask", masked)
-        cv2.imshow("ROI", roi)
-        cv2.imshow("Object Analysis", analysis)
-        cv2.imshow("Pseudo-landmarks", landmarks)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        panels = [
+            ("Original", image),
+            ("Gaussian Blur", blurred),
+            ("Mask", mask_vis),
+            ("ROI Objects", roi),
+            ("Object Analysis", analysis),
+            ("Pseudo-landmarks", landmarks),
+        ]
+        plt.figure(figsize=(12, 8))
+        for idx, (title, img) in enumerate(panels, start=1):
+            plt.subplot(2, 3, idx)
+            if img.ndim == 2:
+                plt.imshow(img, cmap="gray")
+            else:
+                plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            plt.title(title)
+            plt.axis("off")
+        plt.tight_layout()
+        plt.show()
 
 
 def iter_images(input_path: Path):
