@@ -17,7 +17,7 @@ def parse_args():
     parser_args.add_argument(
         "--output-dir",
         type=str,
-        default="output",
+        default="distribution_graphs",
         help="Directory to save plots",
     )
     return parser_args.parse_args()
