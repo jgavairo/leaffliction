@@ -32,8 +32,8 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="augmented_directory",
-        help="Directory to save augmented images",
+        default=None,
+        help="Optional output directory override",
     )
     return parser.parse_args()
 
@@ -117,7 +117,14 @@ def save_and_show_demo(image_path: Path, output_root: Path):
 def main():
     args = parse_args()
     input_path = Path(args.input_path)
-    output_root = Path(args.output_dir)
+
+    if input_path.is_dir():
+        output_root = Path(args.output_dir or "augmented_data")
+        graphs_dir = Path("augmented_graphs")
+    else:
+        output_root = Path(args.output_dir or "augmented_data_demo")
+        graphs_dir = None
+
     output_root.mkdir(parents=True, exist_ok=True)
 
     if input_path.is_dir():
@@ -154,7 +161,8 @@ def main():
         distribution = parser.collect_distribution(parser.list_class_dirs(output_root))
         labels = list(distribution.keys())
         counts = list(distribution.values())
-        graphs_dir = output_root / "../augmented_graphs"
+        if graphs_dir is None:
+            graphs_dir = Path("augmented_graphs")
         plots.plot_bar(labels, counts, graphs_dir / "bar_chart_merged.png")
         plots.plot_pie(labels, counts, graphs_dir / "pie_chart_merged.png")
         print("Plots saved for balanced dataset.")
