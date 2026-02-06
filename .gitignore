@@ -6,3 +6,4 @@ __pycache__/
 .env
 dataset/images/
 output/
+leaf_model.keras

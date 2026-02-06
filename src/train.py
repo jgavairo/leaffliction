@@ -1,7 +1,8 @@
 import sys
 import os
 import tensorflow as tf
-from tensorflow.keras import layers
+import shutil
+import hashlib
 
 IMG_HEIGHT = 256
 IMG_WIDTH = 256
@@ -97,11 +98,68 @@ def main():
         epochs=epochs
     )
 
-    # 9. Sauvegarde du modèle (Format Keras)
-    print("\nSauvegarde du modèle...")
+    # 9. Sauvegarde et Mise en conformité (ZIP)
+    print("\n--- Sauvegarde et Export (ZIP) ---")
+    
+    # A. Sauvegarder le modèle
     model_filename = "leaf_model.keras"
     model.save(model_filename)
-    print(f"Modèle sauvegardé sous : {model_filename}")
+    print(f"Modèle sauvegardé : {model_filename}")
+
+    # B. Création de l'archive ZIP demandée par le sujet 
+    # Le zip doit contenir : Le modèle + Les images (le dataset fourni en argument)
+    zip_name = "dataset_and_model"
+    print(f"Création de l'archive {zip_name}.zip en cours...")
+    
+    # On crée un dossier temporaire pour tout réunir avant de zipper
+    temp_dir = "temp_delivery"
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    os.makedirs(temp_dir)
+    
+    # On copie le modèle dedans
+    shutil.copy(model_filename, os.path.join(temp_dir, model_filename))
+    
+    # On copie le dossier des images dedans
+    # Attention : data_dir est le chemin passé en argument (ex: output/merged)
+    # On récupère juste le nom du dossier final pour que ce soit propre
+    dataset_folder_name = os.path.basename(os.path.normpath(data_dir))
+    destination_dataset = os.path.join(temp_dir, dataset_folder_name)
+    
+    shutil.copytree(data_dir, destination_dataset)
+
+    # On zippe le tout
+    shutil.make_archive(zip_name, 'zip', temp_dir)
+    
+    # Nettoyage du dossier temporaire
+    shutil.rmtree(temp_dir)
+    
+    print(f"✅ SUCCÈS : L'archive '{zip_name}.zip' a été créée.")
+
+    # 10. Génération du Hash SHA1 (Partie 5)
+    print("\n--- Génération de signature.txt ---")
+    zip_filename = f"{zip_name}.zip"
+    
+    # On calcule le hash du fichier ZIP
+    sha1 = hashlib.sha1()
+    
+    # On lit le fichier par blocs pour ne pas saturer la mémoire
+    with open(zip_filename, 'rb') as f:
+        while True:
+            data = f.read(65536) # Lecture par blocs de 64k
+            if not data:
+                break
+            sha1.update(data)
+            
+    hash_result = sha1.hexdigest()
+    
+    # On écrit le hash dans signature.txt
+    signature_file = "signature.txt"
+    with open(signature_file, 'w') as f:
+        f.write(hash_result)
+        
+    print(f"Hash SHA1 calculé : {hash_result}")
+    print(f"✅ SUCCÈS : '{signature_file}' a été créé.")
 
 if __name__ == "__main__":
     main()
