@@ -117,13 +117,6 @@ def main():
             style=style,
         ).ask()
         aug_input_path = Path(aug_input)
-        variations = None
-        if aug_input_path.is_file():
-            variations = questionary.text(
-                "Variations per image:",
-                default="6",
-                style=style,
-            ).ask()
 
         command = [
             sys.executable,
@@ -132,9 +125,6 @@ def main():
             "--output-dir",
             str(Path(aug_output)),
         ]
-        if variations is not None:
-            command.extend(["--variations", str(variations)])
-
         run_command(command)
 
     if "Transformation" in steps:

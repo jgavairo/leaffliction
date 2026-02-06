@@ -3,12 +3,14 @@ import numpy as np
 from pathlib import Path
 
 from albumentations import (
-    HorizontalFlip,
     Rotate,
     RandomResizedCrop,
     RandomBrightnessContrast,
+    RandomGamma,
+    RandomScale,
     GridDistortion,
     GaussianBlur,
+    Perspective,
     Compose,
 )
 
@@ -30,12 +32,13 @@ def augment_class(class_dir: Path, deficit: int, output_dir: Path):
         return
 
     augmentations = Compose([
-        HorizontalFlip(p=0.5),
-        Rotate(limit=30, p=0.5),
-        RandomResizedCrop(size=(224, 224), p=0.5),
+        Rotate(limit=20, p=0.5),
+        RandomResizedCrop(size=(224, 224), p=0.4),
+        RandomScale(scale_limit=0.2, p=0.4),
         RandomBrightnessContrast(p=0.5),
-        GridDistortion(p=0.5),
-        GaussianBlur(p=0.5),
+        RandomGamma(p=0.4),
+        GaussianBlur(p=0.3),
+        Perspective(scale=(0.02, 0.08), p=0.3),
     ])
 
     output_class_dir = output_dir / class_dir.name

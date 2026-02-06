@@ -3,14 +3,17 @@ from pathlib import Path
 
 import cv2
 import shutil
+import matplotlib.pyplot as plt
 from albumentations import (
     Compose,
-    HorizontalFlip,
-    VerticalFlip,
     Rotate,
+    HueSaturationValue,
     RandomBrightnessContrast,
+    RandomGamma,
+    RandomScale,
+    RandomResizedCrop,
     GaussianBlur,
-    GridDistortion,
+    Perspective,
 )
 import parser
 import plots
@@ -29,14 +32,8 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="output/augmented",
+        default="augmented_directory",
         help="Directory to save augmented images",
-    )
-    parser.add_argument(
-        "--variations",
-        type=int,
-        default=6,
-        help="Number of augmented images per input image",
     )
     return parser.parse_args()
 
@@ -44,14 +41,25 @@ def parse_args():
 def build_augmentations():
     return Compose(
         [
-            HorizontalFlip(p=0.5),
-            VerticalFlip(p=0.2),
-            Rotate(limit=20, p=0.5),
-            RandomBrightnessContrast(p=0.5),
+            Rotate(limit=100, p=0.5),
+            HueSaturationValue(hue_shift_limit=0, sat_shift_limit=(40, 40), val_shift_limit=0, p=0.5),
+            RandomBrightnessContrast(brightness_limit=(0.15, 0.15), contrast_limit=0, p=0.4),
             GaussianBlur(p=0.3),
-            GridDistortion(p=0.2),
+            RandomScale(scale_limit=0.2, p=0.4),
+            Perspective(scale=(0.08, 0.18), keep_size=True, fit_output=True, p=0.3),
         ]
     )
+
+
+def build_demo_augmentations():
+    return [
+        ("rotation", Rotate(limit=100, p=1.0)),
+        ("blur", GaussianBlur(blur_limit=50, p=1.0)),
+        ("contrast", HueSaturationValue(hue_shift_limit=0, sat_shift_limit=(60, 60), val_shift_limit=0, p=1.0)),
+        ("scaling", RandomResizedCrop(size=(256, 256), scale=(0.5, 0.7), p=1.0)),
+        ("illumination", RandomBrightnessContrast(brightness_limit=(0.4, 0.4), contrast_limit=0, p=1.0)),
+        ("projective", Perspective(scale=(0.3, 1.0), keep_size=True, fit_output=True, p=1.0)),
+    ]
 
 
 def is_image_file(path: Path):
@@ -69,7 +77,7 @@ def save_augmented(image_path: Path, output_root: Path, augmenter, variations: i
     if image is None:
         return
 
-    for i in range(variations):
+    for i in range(6):  # Always use fixed 6 demo augmentations
         augmented = augmenter(image=image)["image"]
         relative_parent = image_path.parent
         output_dir = output_root / relative_parent.name
@@ -77,6 +85,33 @@ def save_augmented(image_path: Path, output_root: Path, augmenter, variations: i
 
         output_name = f"{image_path.stem}_aug_{i}{image_path.suffix}"
         cv2.imwrite(str(output_dir / output_name), augmented)
+
+
+def save_and_show_demo(image_path: Path, output_root: Path):
+    image = cv2.imread(str(image_path))
+    if image is None:
+        return
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    panels = [("original", image)]
+
+    original_name = f"{image_path.stem}_original{image_path.suffix}"
+    cv2.imwrite(str(output_root / original_name), image)
+
+    for name, transform in build_demo_augmentations():
+        augmented = transform(image=image)["image"]
+        output_name = f"{image_path.stem}_{name}{image_path.suffix}"
+        cv2.imwrite(str(output_root / output_name), augmented)
+        panels.append((name, augmented))
+
+    plt.figure(figsize=(12, 8))
+    for idx, (title, img) in enumerate(panels, start=1):
+        plt.subplot(2, 4, idx)
+        plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        plt.title(title)
+        plt.axis("off")
+    plt.tight_layout()
+    plt.show()
 
 
 def main():
@@ -98,50 +133,31 @@ def main():
             for class_name, count in distribution.items()
         }
 
+        for class_name, count in distribution.items():
+            source_dir = input_path / class_name
+            output_class_dir = output_root / class_name
+            output_class_dir.mkdir(parents=True, exist_ok=True)
+            for img_path in source_dir.iterdir():
+                if img_path.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+                    shutil.copy2(img_path, output_class_dir / img_path.name)
+
         for class_name, missing in missing_images.items():
             if missing > 0:
                 augment_class(input_path / class_name, missing, output_root)
 
         print(f"Augmented images saved to: {output_root}")
     else:
-        augmenter = build_augmentations()
-        images = iter_images(input_path)
-        if not images:
-            print("No images found.")
-            return
-
-        for img_path in images:
-            save_augmented(img_path, output_root, augmenter, args.variations)
-
+        save_and_show_demo(input_path, output_root)
         print(f"Augmented images saved to: {output_root}")
 
     if input_path.is_dir():
-        merged_dir = output_root / "merged"
-        img_extensions = {".jpg", ".jpeg", ".png"}
-
-        class_dirs = parser.list_class_dirs(input_path)
-        for class_dir in class_dirs:
-            source_dir = class_dir
-            augmented_class_dir = output_root / class_dir.name
-            merged_class_dir = merged_dir / class_dir.name
-            merged_class_dir.mkdir(parents=True, exist_ok=True)
-
-            if source_dir.exists():
-                for img_path in source_dir.iterdir():
-                    if img_path.suffix.lower() in img_extensions:
-                        shutil.copy2(img_path, merged_class_dir / img_path.name)
-
-            if augmented_class_dir.exists():
-                for img_path in augmented_class_dir.iterdir():
-                    if img_path.suffix.lower() in img_extensions:
-                        shutil.copy2(img_path, merged_class_dir / img_path.name)
-
-        distribution = parser.collect_distribution(parser.list_class_dirs(merged_dir))
+        distribution = parser.collect_distribution(parser.list_class_dirs(output_root))
         labels = list(distribution.keys())
         counts = list(distribution.values())
-        plots.plot_bar(labels, counts, merged_dir / "bar_chart_merged.png")
-        plots.plot_pie(labels, counts, merged_dir / "pie_chart_merged.png")
-        print(f"Merged dataset saved to: {merged_dir}")
+        graphs_dir = output_root / "../augmented_graphs"
+        plots.plot_bar(labels, counts, graphs_dir / "bar_chart_merged.png")
+        plots.plot_pie(labels, counts, graphs_dir / "pie_chart_merged.png")
+        print("Plots saved for balanced dataset.")
 
 
 if __name__ == "__main__":
