@@ -26,7 +26,7 @@ def parse_args():
         "-dst",
         dest="dst",
         type=str,
-        help="Destination directory to save transformations",
+        help="Destination directory to save transformations (optional)",
     )
     parser.add_argument(
         "--show",
@@ -121,17 +121,62 @@ def pseudo_landmarks(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return output
 
 
-def color_histogram(image: np.ndarray, mask: np.ndarray, output_path: Path):
+def compute_color_hists(image: np.ndarray, mask: np.ndarray):
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    colors = ["r", "g", "b"]
-    labels = ["R", "G", "B"]
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+
+    hist_r = cv2.calcHist([rgb], [0], mask, [256], [0, 256]).flatten()
+    hist_g = cv2.calcHist([rgb], [1], mask, [256], [0, 256]).flatten()
+    hist_b = cv2.calcHist([rgb], [2], mask, [256], [0, 256]).flatten()
+
+    hist_h = cv2.calcHist([hsv], [0], mask, [256], [0, 256]).flatten()
+    hist_s = cv2.calcHist([hsv], [1], mask, [256], [0, 256]).flatten()
+    hist_v = cv2.calcHist([hsv], [2], mask, [256], [0, 256]).flatten()
+
+    hist_l = cv2.calcHist([lab], [0], mask, [256], [0, 256]).flatten()
+    hist_a = cv2.calcHist([lab], [1], mask, [256], [0, 256]).flatten()
+    hist_b_lab = cv2.calcHist([lab], [2], mask, [256], [0, 256]).flatten()
+
+    hists = {
+        "red": hist_r,
+        "green": hist_g,
+        "blue": hist_b,
+        "hue": hist_h,
+        "saturation": hist_s,
+        "value": hist_v,
+        "lightness": hist_l,
+        "green-magenta": hist_a,
+        "blue-yellow": hist_b_lab,
+    }
+
+    for key, hist in hists.items():
+        total = hist.sum()
+        if total > 0:
+            hists[key] = (hist / total) * 100.0
+
+    return hists
+
+
+def color_histogram(image: np.ndarray, mask: np.ndarray, output_path: Path):
+    hists = compute_color_hists(image, mask)
     plt.figure(figsize=(12, 6))
-    for channel in range(3):
-        hist = cv2.calcHist([rgb], [channel], mask, [256], [0, 256]).flatten()
-        plt.plot(hist, color=colors[channel], label=labels[channel])
-    plt.title("Color Histogram (RGB)")
-    plt.xlabel("Intensity")
-    plt.ylabel("Frequency")
+    color_map = {
+        "red": "r",
+        "green": "g",
+        "blue": "b",
+        "hue": "m",
+        "saturation": "c",
+        "value": "y",
+        "lightness": "#666666",
+        "green-magenta": "#ff66cc",
+        "blue-yellow": "#ffee00",
+    }
+    for label, hist in hists.items():
+        plt.plot(hist, color=color_map.get(label, "k"), label=label)
+    plt.title("Color Histogram")
+    plt.xlabel("Pixel intensity")
+    plt.ylabel("Proportion of pixels (%)")
     plt.legend()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path)
@@ -170,15 +215,36 @@ def process_image(image_path: Path, output_dir: Path | None, show: bool):
             ("Object Analysis", analysis),
             ("Pseudo-landmarks", landmarks),
         ]
-        plt.figure(figsize=(12, 8))
+        plt.figure(figsize=(14, 8))
+        grid = plt.GridSpec(2, 4)
         for idx, (title, img) in enumerate(panels, start=1):
-            plt.subplot(2, 3, idx)
+            plt.subplot(grid[(idx - 1) // 4, (idx - 1) % 4])
             if img.ndim == 2:
                 plt.imshow(img, cmap="gray")
             else:
                 plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
             plt.title(title)
             plt.axis("off")
+
+        hists = compute_color_hists(image, mask)
+        plt.subplot(grid[1, 2:4])
+        color_map = {
+            "red": "r",
+            "green": "g",
+            "blue": "b",
+            "hue": "m",
+            "saturation": "c",
+            "value": "y",
+            "lightness": "#666666",
+            "green-magenta": "#ff66cc",
+            "blue-yellow": "#ffee00",
+        }
+        for label, hist in hists.items():
+            plt.plot(hist, color=color_map.get(label, "k"), label=label)
+        plt.title("Color Histogram")
+        plt.xlabel("Pixel intensity")
+        plt.ylabel("Proportion of pixels (%)")
+        plt.legend(fontsize=7)
         plt.tight_layout()
         plt.show()
 
@@ -192,9 +258,9 @@ def iter_images(input_path: Path):
 def main():
     args = parse_args()
 
-    if args.src and args.dst:
+    if args.src:
         src = Path(args.src)
-        dst = Path(args.dst)
+        dst = Path(args.dst) if args.dst else Path("transformed_data")
         images = iter_images(src)
         if not images:
             print("No images found.")
@@ -207,7 +273,9 @@ def main():
         return
 
     if args.image_path:
-        process_image(Path(args.image_path), output_dir=None, show=True)
+        demo_dir = Path("transformed_data_demo")
+        demo_dir.mkdir(parents=True, exist_ok=True)
+        process_image(Path(args.image_path), output_dir=demo_dir, show=True)
         return
 
     print("Usage: provide an image path or use -src and -dst.")
