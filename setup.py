@@ -1,164 +1,315 @@
-from pathlib import Path
+#!/usr/bin/env python3
+"""setup.py - Project CLI menu for Leaffliction pipeline.
+
+Steps:
+    1) Distribution analysis (plots)
+    2) Split dataset/images -> dataset_train/ + dataset_predict/
+    3) Augment dataset_train -> dataset_train_augmented/
+    4) Transform train -> output_transform/train/
+    5) Transform predict -> output_transform/predict/
+    6) Full pipeline
+
+You can run interactively or non-interactively:
+  python setup.py
+  python setup.py --list
+  python setup.py --run 1
+"""
+
+import argparse
+import random
 import shutil
-import subprocess
 import sys
+from pathlib import Path
+import subprocess
+import curses
+
+# Add src to import path
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+try:
+    from Transformation import process_directory
+except Exception:
+    process_directory = None
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
+
+DEFAULTS = {
+    "source_dir": ROOT / "dataset" / "images",
+    "train_dir": ROOT / "dataset_train",
+    "predict_dir": ROOT / "dataset_predict",
+    "aug_train_dir": ROOT / "dataset_train_augmented",
+    "transform_out": ROOT / "output_transform",
+}
 
 
-def run_command(args):
-    subprocess.run(args, check=False)
+def is_image_file(path: Path) -> bool:
+    return path.suffix.lower() in IMAGE_EXTENSIONS
+
+
+def split_dataset(source_dir: Path, train_dir: Path, predict_dir: Path, split_ratio=0.8, seed=42):
+    """Split dataset by class folders into train and predict directories."""
+    if not source_dir.exists() or not source_dir.is_dir():
+        print(f"✗ Source directory not found: {source_dir}")
+        return
+
+    # Safety checks
+    if train_dir.resolve() == source_dir.resolve() or predict_dir.resolve() == source_dir.resolve():
+        print("✗ Train/Predict directories must be different from source directory.")
+        return
+
+    # Clear previous splits to avoid mixing old files
+    if train_dir.exists():
+        shutil.rmtree(train_dir)
+    if predict_dir.exists():
+        shutil.rmtree(predict_dir)
+
+    random.seed(seed)
+    class_dirs = [p for p in source_dir.iterdir() if p.is_dir()]
+    if not class_dirs:
+        print("✗ No class directories found in source.")
+        return
+
+    for class_dir in class_dirs:
+        images = [p for p in class_dir.iterdir() if p.is_file() and is_image_file(p)]
+        if not images:
+            continue
+        random.shuffle(images)
+        split_index = int(len(images) * split_ratio)
+        train_images = images[:split_index]
+        predict_images = images[split_index:]
+
+        train_class = train_dir / class_dir.name
+        predict_class = predict_dir / class_dir.name
+        train_class.mkdir(parents=True, exist_ok=True)
+        predict_class.mkdir(parents=True, exist_ok=True)
+
+        for img in train_images:
+            shutil.copy2(img, train_class / img.name)
+        for img in predict_images:
+            shutil.copy2(img, predict_class / img.name)
+
+    print(f"✓ Split complete: {train_dir} and {predict_dir}")
+
+
+def augment_dataset(train_dir: Path, aug_out: Path):
+    """Call Augmentation.py to balance and augment training dataset."""
+    if not train_dir.exists():
+        print(f"✗ Train directory not found: {train_dir}")
+        return
+
+    cmd = [sys.executable, str(SRC / "Augmentation.py"), str(train_dir), "--output-dir", str(aug_out)]
+    print("→ Running augmentation:")
+    print(" ", " ".join(cmd))
+    result = subprocess.run(cmd)
+    if result.returncode == 0:
+        print(f"✓ Augmentation saved to: {aug_out}")
+    else:
+        print("✗ Augmentation failed.")
+
+
+def transform_dataset(source_dir: Path, output_dir: Path):
+    """Run transformations and export dataset outputs using Transformation.py functions."""
+    if process_directory is None:
+        print("✗ Could not import Transformation.process_directory")
+        return
+    if not source_dir.exists():
+        print(f"✗ Source directory not found: {source_dir}")
+        return
+
+    process_directory(str(source_dir), str(output_dir), mask_only=False, silent=False)
+
+
+def run_distribution(dataset_dir: Path):
+    """Run Distribution.py to generate class distribution plots."""
+    if not dataset_dir.exists():
+        print(f"✗ Dataset directory not found: {dataset_dir}")
+        return
+
+    cmd = [sys.executable, str(SRC / "Distribution.py"), str(dataset_dir)]
+    print("→ Running distribution analysis:")
+    print(" ", " ".join(cmd))
+    result = subprocess.run(cmd)
+    if result.returncode == 0:
+        print("✓ Distribution plots generated.")
+    else:
+        print("✗ Distribution analysis failed.")
+
+
+def menu():
+    print("\nLeaffliction - Pipeline Menu")
+    print("1) Distribution analysis (plots)")
+    print("2) Split dataset (dataset/images -> dataset_train + dataset_predict)")
+    print("3) Augment training dataset (dataset_train -> dataset_train_augmented)")
+    print("4) Transform train dataset")
+    print("5) Transform predict dataset")
+    print("6) Run full pipeline (split -> augment -> transform train -> transform predict)")
+    print("0) Exit")
+
+
+def run_choice(choice: str):
+    src = DEFAULTS["source_dir"]
+    train = DEFAULTS["train_dir"]
+    predict = DEFAULTS["predict_dir"]
+    aug = DEFAULTS["aug_train_dir"]
+    out = DEFAULTS["transform_out"]
+
+    if choice == "1":
+        # Prefer augmented train if exists, else train, else source images
+        if aug.exists():
+            target = aug
+        elif train.exists():
+            target = train
+        else:
+            target = src
+        run_distribution(target)
+    elif choice == "2":
+        split_dataset(src, train, predict)
+    elif choice == "3":
+        augment_dataset(train, aug)
+    elif choice == "4":
+        # Prefer augmented train if exists
+        source = aug if aug.exists() else train
+        transform_dataset(source, out / "train")
+    elif choice == "5":
+        transform_dataset(predict, out / "predict")
+    elif choice == "6":
+        split_dataset(src, train, predict)
+        augment_dataset(train, aug)
+        source = aug if aug.exists() else train
+        transform_dataset(source, out / "train")
+        transform_dataset(predict, out / "predict")
+    elif choice == "0":
+        print("Bye.")
+    else:
+        print("Invalid option.")
+
+
+def curses_menu(options):
+    """Interactive arrow-key menu using curses."""
+    def _menu(stdscr):
+        curses.curs_set(0)
+        curses.start_color()
+        curses.use_default_colors()
+        curses.init_pair(1, curses.COLOR_CYAN, -1)
+        curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_CYAN)
+        curses.init_pair(3, curses.COLOR_YELLOW, -1)
+        curses.init_pair(4, curses.COLOR_WHITE, -1)
+
+        current = 0
+        while True:
+            stdscr.clear()
+            height, width = stdscr.getmaxyx()
+
+            title = "Leaffliction Pipeline"
+            subtitle = "Use ↑/↓ or j/k • Enter to select • Esc to quit"
+
+            # Compute box size
+            box_width = min(max(len(max([label for label, _ in options], key=len)) + 6, 40), width - 4)
+            box_height = len(options) + 6
+
+            start_y = max((height - box_height) // 2, 1)
+            start_x = max((width - box_width) // 2, 2)
+
+            # Draw border box
+            for x in range(start_x, start_x + box_width):
+                stdscr.addch(start_y, x, curses.ACS_HLINE)
+                stdscr.addch(start_y + box_height - 1, x, curses.ACS_HLINE)
+            for y in range(start_y, start_y + box_height):
+                stdscr.addch(y, start_x, curses.ACS_VLINE)
+                stdscr.addch(y, start_x + box_width - 1, curses.ACS_VLINE)
+            stdscr.addch(start_y, start_x, curses.ACS_ULCORNER)
+            stdscr.addch(start_y, start_x + box_width - 1, curses.ACS_URCORNER)
+            stdscr.addch(start_y + box_height - 1, start_x, curses.ACS_LLCORNER)
+            stdscr.addch(start_y + box_height - 1, start_x + box_width - 1, curses.ACS_LRCORNER)
+
+            # Title
+            title_x = start_x + (box_width - len(title)) // 2
+            stdscr.addstr(start_y + 1, title_x, title, curses.color_pair(1) | curses.A_BOLD)
+
+            # Options
+            for idx, (label, _value) in enumerate(options):
+                line_y = start_y + 3 + idx
+                line_x = start_x + 2
+                text = f"{idx + 1}. {label}"
+                if idx == current:
+                    stdscr.addstr(line_y, line_x, text.ljust(box_width - 4), curses.color_pair(2) | curses.A_BOLD)
+                else:
+                    stdscr.addstr(line_y, line_x, text.ljust(box_width - 4), curses.color_pair(4))
+
+            # Footer help
+            footer_x = start_x + (box_width - len(subtitle)) // 2
+            stdscr.addstr(start_y + box_height - 2, footer_x, subtitle, curses.color_pair(3))
+
+            stdscr.refresh()
+
+            key = stdscr.getch()
+            if key in (3, 27):  # Ctrl+C or ESC
+                return "0"
+            if key in (curses.KEY_UP, ord('k')):
+                current = (current - 1) % len(options)
+            elif key in (curses.KEY_DOWN, ord('j')):
+                current = (current + 1) % len(options)
+            elif key in (curses.KEY_ENTER, 10, 13):
+                return options[current][1]
+
+    return curses.wrapper(_menu)
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Leaffliction pipeline CLI menu")
+    parser.add_argument("--list", action="store_true", help="List menu options and exit")
+    parser.add_argument("--run", type=str, default=None, help="Run a menu option directly (e.g., 1,2,3,4,5,6)")
+    parser.add_argument("--text", action="store_true", help="Force text menu (no arrows)")
+    args = parser.parse_args()
+
+    if args.list:
+        menu()
+        return
+
+    if args.run is not None:
+        run_choice(args.run)
+        return
+
+    options = [
+        ("Distribution analysis (plots)", "1"),
+        ("Split dataset (dataset/images -> dataset_train + dataset_predict)", "2"),
+        ("Augment training dataset (dataset_train -> dataset_train_augmented)", "3"),
+        ("Transform train dataset", "4"),
+        ("Transform predict dataset", "5"),
+        ("Run full pipeline (split -> augment -> transform train -> transform predict)", "6"),
+        ("Exit", "0"),
+    ]
+
+    if not args.text:
+        try:
+            while True:
+                choice = curses_menu(options)
+                if choice == "0":
+                    run_choice(choice)
+                    break
+                run_choice(choice)
+                input("\nPress Enter to return to the menu...")
+            return
+        except KeyboardInterrupt:
+            print("\nBye.")
+            return
+        except Exception:
+            print("\n⚠ Arrow-key menu unavailable. Falling back to text menu.")
+
+    # Fallback to simple text menu
     try:
-        import questionary
-    except ImportError:
-        print("This menu requires 'questionary'. Install it with: pip install questionary")
-        sys.exit(1)
-
-    style = questionary.Style([
-        ("qmark", "fg:#00d7ff bold"),
-        ("question", "bold"),
-        ("answer", "fg:#00d7ff bold"),
-        ("pointer", "fg:#00d7ff bold"),
-        ("highlighted", "fg:#ffffff bg:#005f87 bold"),
-        ("selected", "fg:#00d7ff"),
-        ("separator", "fg:#6c6c6c"),
-        ("instruction", "fg:#6c6c6c"),
-    ])
-
-    base_dir = Path(__file__).resolve().parent
-    src_dir = base_dir / "src"
-
-    selection = questionary.select(
-        "Select a step :",
-        choices=[
-            "Run all",
-            "Distribution",
-            "Augmentation",
-            "Transformation",
-            "Clean outputs only",
-        ],
-        style=style,
-    ).ask()
-
-    if not selection:
-        print("No step selected.")
-        return
-
-    clean_outputs = False
-    steps = []
-    if selection == "Run all":
-        steps = ["Distribution", "Augmentation", "Transformation"]
-        clean_outputs = questionary.confirm(
-            "Clean output directory first?",
-            default=True,
-            style=style,
-        ).ask()
-    elif selection == "Clean outputs only":
-        clean_outputs = True
-    else:
-        steps = [selection]
-
-    if selection == "Clean outputs only":
-        output_dir = questionary.text(
-            "Output directory to clean:",
-            default="output/",
-            style=style,
-        ).ask()
-        output_path = Path(output_dir)
-        if output_path.exists():
-            shutil.rmtree(output_path)
-        print(f"Cleaned: {output_path}")
-        return
-
-    dataset_path = None
-    output_dir = None
-    if "Distribution" in steps:
-        dataset_path = questionary.text(
-            "Dataset path:",
-            default="dataset/images",
-            style=style,
-        ).ask()
-        output_dir = questionary.text(
-            "Output directory:",
-            default="output/",
-            style=style,
-        ).ask()
-
-        dataset_path = str(Path(dataset_path))
-        output_dir = str(Path(output_dir))
-
-        if clean_outputs:
-            output_path = Path(output_dir)
-            if output_path.exists():
-                shutil.rmtree(output_path)
-            print(f"Cleaned: {output_path}")
-
-    if "Distribution" in steps and dataset_path and output_dir:
-        run_command(
-            [
-                sys.executable,
-                str(src_dir / "Distribution.py"),
-                dataset_path,
-                "--output-dir",
-                output_dir,
-            ]
-        )
-
-    if "Augmentation" in steps:
-        aug_input = questionary.text(
-            "Augmentation input (image or folder):",
-            default=dataset_path or "dataset/images",
-            style=style,
-        ).ask()
-        aug_output = questionary.text(
-            "Augmentation output directory:",
-            default=str(Path(output_dir or "output/") / "augmented"),
-            style=style,
-        ).ask()
-        aug_input_path = Path(aug_input)
-
-        command = [
-            sys.executable,
-            str(src_dir / "Augmentation.py"),
-            str(aug_input_path),
-            "--output-dir",
-            str(Path(aug_output)),
-        ]
-        run_command(command)
-
-    if "Transformation" in steps:
-        default_src = (
-            str(Path(output_dir) / "transformed_data")
-            if output_dir
-            else "dataset/images"
-        )
-        default_dst = (
-            str(Path(output_dir) / "transformed_output")
-            if output_dir
-            else "output/transformed_output"
-        )
-        transform_src = questionary.text(
-            "Transformation source directory:",
-            default=default_src,
-            style=style,
-        ).ask()
-        transform_dst = questionary.text(
-            "Transformation destination directory:",
-            default=default_dst,
-            style=style,
-        ).ask()
-
-        run_command(
-            [
-                sys.executable,
-                str(src_dir / "Transformation.py"),
-                "-src",
-                str(Path(transform_src)),
-                "-dst",
-                str(Path(transform_dst)),
-            ]
-        )
+        while True:
+            menu()
+            choice = input("Select an option: ").strip()
+            if choice == "0":
+                run_choice(choice)
+                break
+            run_choice(choice)
+    except KeyboardInterrupt:
+        print("\nBye.")
 
 
 if __name__ == "__main__":

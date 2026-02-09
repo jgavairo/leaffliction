@@ -24,7 +24,9 @@ from pathlib import Path
 import cv2 as cv
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import math
+import csv
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
 
@@ -207,7 +209,8 @@ class Transformation:
 
     def color_histogram(self):
         """Color Histogram transformation."""
-        # Build histograms for RGB, HSV and LAB channels and plot with matplotlib
+        # Build histograms for RGB, HSV and LAB channels and return as image
+        # (this method is kept to allow saving the histogram as an image)
         channels = {}
         b, g, r = cv.split(self.img)
         channels['blue'] = b
@@ -229,13 +232,12 @@ class Transformation:
         mask = self.mask
         for name, ch in channels.items():
             hist = cv.calcHist([ch], [0], mask, [256], [0, 256])
-            # normalize to percentage
             total = hist.sum() if hist.sum() != 0 else 1
             hist = (hist.flatten() / total) * 100.0
             hist_data[name] = hist
 
-        # Plot into a matplotlib figure (smaller by default)
-        fig, ax = plt.subplots(figsize=(3, 6))
+        # Render a small figure to an image for saving
+        fig, ax = plt.subplots(figsize=(3, 6), dpi=150)
         x = np.arange(256)
         color_map = {
             'blue': 'b', 'green': 'g', 'red': 'r',
@@ -243,22 +245,49 @@ class Transformation:
             'lightness': 'k', 'green-magenta': 'tab:olive', 'blue-yellow': 'tab:orange'
         }
         for name, hist in hist_data.items():
-            ax.plot(x, hist, label=name, color=color_map.get(name, 'k'))
+            ax.plot(x, hist, label=name, color=color_map.get(name, 'k'), linewidth=1.0)
 
         ax.set_xlabel('pixel intensity')
         ax.set_ylabel('proportion of pixels (%)')
-        ax.legend(fontsize='small')
+        ax.legend(fontsize='xx-small')
         ax.set_xlim(0, 255)
-
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            tmp_path = tmp.name
         fig.tight_layout()
-        fig.savefig(tmp_path)
+        canvas = FigureCanvas(fig)
+        canvas.draw()
+        width, height = canvas.get_width_height()
+        buf = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8)
+        hist_img = buf.reshape((height, width, 3))
+        hist_img = cv.cvtColor(hist_img, cv.COLOR_RGB2BGR)
         plt.close(fig)
-
-        hist_img = cv.imread(tmp_path)
-        os.unlink(tmp_path)
         return hist_img
+
+    def color_histogram_data(self):
+        """Return histogram data dict (name -> 256-array) for direct plotting."""
+        channels = {}
+        b, g, r = cv.split(self.img)
+        channels['blue'] = b
+        channels['green'] = g
+        channels['red'] = r
+
+        hsv = cv.cvtColor(self.img, cv.COLOR_BGR2HSV)
+        channels['hue'] = hsv[:, :, 0]
+        channels['saturation'] = hsv[:, :, 1]
+        channels['value'] = hsv[:, :, 2]
+
+        lab = cv.cvtColor(self.img, cv.COLOR_BGR2LAB)
+        channels['lightness'] = lab[:, :, 0]
+        channels['green-magenta'] = lab[:, :, 1]
+        channels['blue-yellow'] = lab[:, :, 2]
+
+        hist_data = {}
+        mask = self.mask
+        for name, ch in channels.items():
+            hist = cv.calcHist([ch], [0], mask, [256], [0, 256])
+            total = hist.sum() if hist.sum() != 0 else 1
+            hist = (hist.flatten() / total) * 100.0
+            hist_data[name] = hist
+
+        return hist_data
 
     def get_all_transformations(self):
         """Get all transformation functions."""
@@ -272,7 +301,7 @@ class Transformation:
         }
 
 
-def display_transformations(image_path, silent=False, max_display=500):
+def display_transformations(image_path, silent=False, max_display=200):
     """Display all transformations in a grid.
 
     silent: if True, suppress progress prints.
@@ -285,12 +314,19 @@ def display_transformations(image_path, silent=False, max_display=500):
     transformer = Transformation(image)
     transforms = transformer.get_all_transformations()
 
-    # Create figure with GridSpec: 3 rows, 3 cols (layout: 3-3-1 vertical)
-    # Smaller default figure for compact display
-    fig = plt.figure(figsize=(16, 9))
+    # Create smaller figure and compact GridSpec to reduce window size
+    fig = plt.figure(figsize=(8, 6))
     gs = fig.add_gridspec(
-        3, 3, hspace=0.1, wspace=0.1, left=0.02,
-        right=0.98, top=0.89, bottom=0.02
+        3,
+        3,
+        hspace=0.12,
+        wspace=0.12,
+        left=0.02,
+        right=0.98,
+        top=0.9,
+        bottom=0.03,
+        width_ratios=[1.0, 1.0, 0.9],
+        height_ratios=[1.0, 1.0, 1.0],
     )
     fig.suptitle(f"Image Transformations: {image_path.name}", fontsize=14)
 
@@ -333,24 +369,34 @@ def display_transformations(image_path, silent=False, max_display=500):
         ax.set_title(name)
         ax.axis("off")
 
-    # ColorHistogram spans full height on right
+    # ColorHistogram: plot directly on the axis for crisp vector rendering
     ax_hist = fig.add_subplot(gs[:, 2])
     if not silent:
         print("  Applying ColorHistogram...")
-    hist_result = transforms["ColorHistogram"]()
-    if hist_result is None:
+    try:
+        hist_data = transformer.color_histogram_data()
+        x = np.arange(256)
+        color_map = {
+            'blue': 'b', 'green': 'g', 'red': 'r',
+            'hue': 'm', 'saturation': 'c', 'value': 'y',
+            'lightness': 'k', 'green-magenta': 'tab:olive', 'blue-yellow': 'tab:orange'
+        }
+        for name, hist in hist_data.items():
+            ax_hist.plot(x, hist, label=name, color=color_map.get(name, 'k'), linewidth=1.0)
+        ax_hist.set_xlabel('pixel intensity')
+        ax_hist.set_ylabel('proportion of pixels (%)')
+        ax_hist.set_xlim(0, 255)
+        ax_hist.legend(fontsize='xx-small')
+    except Exception:
         ax_hist.text(0.5, 0.5, 'No histogram', ha='center')
-    else:
-        hist_disp = cv.cvtColor(hist_result, cv.COLOR_BGR2RGB)
-        h, w = hist_disp.shape[:2]
-        max_dim = max(h, w)
-        if max_display and max_dim > max_display:
-            scale = max_display / float(max_dim)
-            hist_disp = cv.resize(hist_disp, (int(w * scale), int(h * scale)), interpolation=cv.INTER_AREA)
-        ax_hist.imshow(hist_disp)
     ax_hist.set_title("ColorHistogram")
-    ax_hist.axis("off")
+    ax_hist.axis('on')
 
+    # Compact layout and show
+    try:
+        fig.tight_layout(rect=[0, 0, 0.98, 0.92])
+    except Exception:
+        pass
     plt.show()
 
 
@@ -398,6 +444,69 @@ def save_transformations(image_path, output_dir, mask_only=False,
     return output_paths
 
 
+def save_dataset_entry(image_path: Path, output_root: Path, transformer: Transformation,
+                       target_size=(224, 224)):
+    """Save mask, resized normalized image and return features dict."""
+    # Prepare output dirs
+    rel_parent = image_path.parent.name
+    masks_out = output_root / "masks" / rel_parent
+    norm_out = output_root / "normalized" / rel_parent
+    masks_out.mkdir(parents=True, exist_ok=True)
+    norm_out.mkdir(parents=True, exist_ok=True)
+
+    # Generate masked image and mask
+    masked = transformer.masked_leaf()
+    mask = transformer.mask
+
+    # Compute shape features using largest contour
+    contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    area = 0
+    perimeter = 0
+    bbox = (0, 0, 0, 0)
+    if contours:
+        largest = max(contours, key=cv.contourArea)
+        area = float(cv.contourArea(largest))
+        perimeter = float(cv.arcLength(largest, True))
+        x, y, w, h = cv.boundingRect(largest)
+        bbox = (int(x), int(y), int(w), int(h))
+
+    # Mean color inside mask
+    mean_bgr = cv.mean(transformer.img, mask=mask)[:3]
+    mean_r, mean_g, mean_b = float(mean_bgr[2]), float(mean_bgr[1]), float(mean_bgr[0])
+
+    # Save files
+    base_name = image_path.stem
+    ext = image_path.suffix
+    mask_name = f"{base_name}_mask.png"
+    norm_name = f"{base_name}_norm{ext}"
+
+    # ensure binary mask saved as single channel PNG
+    cv.imwrite(str(masks_out / mask_name), mask)
+
+    # Create normalized resized image (keep colors of masked)
+    h, w = masked.shape[:2]
+    norm = cv.resize(masked, (target_size[1], target_size[0]), interpolation=cv.INTER_AREA)
+    cv.imwrite(str(norm_out / norm_name), norm)
+
+    # Feature dict
+    features = {
+        "file": str(image_path),
+        "mask_path": str(masks_out / mask_name),
+        "norm_path": str(norm_out / norm_name),
+        "area": area,
+        "perimeter": perimeter,
+        "bbox_x": bbox[0],
+        "bbox_y": bbox[1],
+        "bbox_w": bbox[2],
+        "bbox_h": bbox[3],
+        "mean_r": mean_r,
+        "mean_g": mean_g,
+        "mean_b": mean_b,
+    }
+
+    return features
+
+
 def process_directory(src_dir, dst_dir, mask_only=False, silent=False):
     """Process all images in source directory."""
     src_path = Path(src_dir)
@@ -420,18 +529,62 @@ def process_directory(src_dir, dst_dir, mask_only=False, silent=False):
     mode = "mask transformations" if mask_only else "all transformations"
     print(f"\nProcessing {len(images)} images ({mode})...")
 
+    # Prepare CSV for features when not in mask_only mode
+    features_csv = dst_path / "features.csv"
+    csv_fieldnames = [
+        "file",
+        "mask_path",
+        "norm_path",
+        "area",
+        "perimeter",
+        "bbox_x",
+        "bbox_y",
+        "bbox_w",
+        "bbox_h",
+        "mean_r",
+        "mean_g",
+        "mean_b",
+    ]
+
+    if not mask_only:
+        # Write header
+        with open(features_csv, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=csv_fieldnames)
+            writer.writeheader()
+
     for img_path in images:
 
         if not silent:
             print(f"\n{img_path.name}:")
 
-        # Create subdirectory structure
-        rel_path = img_path.relative_to(src_path)
-        output_subdir = dst_path / rel_path.parent
-        output_subdir.mkdir(parents=True, exist_ok=True)
-        save_transformations(img_path, output_subdir, mask_only, silent)
+        if mask_only:
+            # Create subdirectory structure (preserve class folder) only for mask mode
+            rel_path = img_path.relative_to(src_path)
+            output_subdir = dst_path / rel_path.parent
+            output_subdir.mkdir(parents=True, exist_ok=True)
+            save_transformations(img_path, output_subdir, mask_only, silent)
+            continue
 
-    print(f"\n✓ All transformations saved to: {dst_path}")
+        try:
+            # For dataset mode: create transformer and save dataset entry
+            image = cv.imread(str(img_path))
+            if image is None:
+                print(f"  ✗ Could not read: {img_path}")
+                continue
+            transformer = Transformation(image)
+            features = save_dataset_entry(img_path, dst_path, transformer)
+
+            # Append features to CSV
+            with open(features_csv, "a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=csv_fieldnames)
+                writer.writerow(features)
+
+            if not silent:
+                print(f"  Saved dataset entry for: {img_path.name}")
+        except Exception as e:
+            print(f"  ✗ Processing failed for {img_path.name}: {e}")
+
+    print(f"\n✓ Dataset transformations saved to: {dst_path}")
 
 
 def main():
@@ -483,7 +636,7 @@ def main():
         print("Applying 6 transformations...\n")
 
         # Use a fixed, smaller max display dimension (no CLI option)
-        max_display = 500
+        max_display = 200
         display_transformations(image_path, silent, max_display)
 
     except KeyboardInterrupt:
