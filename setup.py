@@ -8,6 +8,9 @@ Steps:
     4) Transform train -> output_transform/train/
     5) Transform predict -> output_transform/predict/
     6) Full pipeline
+    7) Demo augment random image
+    8) Demo transform random image
+    9) Clean generated outputs
 
 You can run interactively or non-interactively:
   python setup.py
@@ -44,6 +47,53 @@ DEFAULTS = {
     "transform_out": ROOT / "output_transform",
 }
 
+# Paths created by the pipeline that can be cleaned
+CLEAN_TARGETS = [
+    DEFAULTS["train_dir"],
+    DEFAULTS["predict_dir"],
+    DEFAULTS["aug_train_dir"],
+    DEFAULTS["transform_out"],
+    ROOT / "augmented_graphs",
+    ROOT / "distribution_graphs",
+]
+
+
+class Style:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    CYAN = "\033[36m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    RED = "\033[31m"
+
+
+def fmt_path(path: Path) -> str:
+    """Return a short, user-friendly path (relative to project root when possible)."""
+    try:
+        return str(path.relative_to(ROOT))
+    except Exception:
+        return path.name
+
+
+def c(text: str, color: str) -> str:
+    return f"{color}{text}{Style.RESET}"
+
+
+def pick_random_image(root_dir: Path):
+    """Pick a random image file from dataset/images (recursive)."""
+    if not root_dir.exists():
+        return None
+    images = [p for p in root_dir.rglob("*") if p.is_file() and is_image_file(p)]
+    if not images:
+        return None
+    return random.choice(images)
+
+
+def print_step(title: str):
+    line = "=" * (len(title) + 8)
+    print(f"\n{c(line, Style.CYAN)}\n{c('=== ' + title + ' ===', Style.CYAN)}\n{c(line, Style.CYAN)}")
+
 
 def is_image_file(path: Path) -> bool:
     return path.suffix.lower() in IMAGE_EXTENSIONS
@@ -51,13 +101,14 @@ def is_image_file(path: Path) -> bool:
 
 def split_dataset(source_dir: Path, train_dir: Path, predict_dir: Path, split_ratio=0.8, seed=42):
     """Split dataset by class folders into train and predict directories."""
+    print_step("Step: Split dataset")
     if not source_dir.exists() or not source_dir.is_dir():
-        print(f"✗ Source directory not found: {source_dir}")
+        print(c("✗ Source directory not found:", Style.RED), fmt_path(source_dir))
         return
 
     # Safety checks
     if train_dir.resolve() == source_dir.resolve() or predict_dir.resolve() == source_dir.resolve():
-        print("✗ Train/Predict directories must be different from source directory.")
+        print(c("✗ Train/Predict directories must be different from source directory.", Style.RED))
         return
 
     # Clear previous splits to avoid mixing old files
@@ -91,51 +142,111 @@ def split_dataset(source_dir: Path, train_dir: Path, predict_dir: Path, split_ra
         for img in predict_images:
             shutil.copy2(img, predict_class / img.name)
 
-    print(f"✓ Split complete: {train_dir} and {predict_dir}")
+    print(c("✓ Split complete", Style.GREEN))
+    print(f"  - Train: {fmt_path(train_dir)}")
+    print(f"  - Predict: {fmt_path(predict_dir)}")
 
 
 def augment_dataset(train_dir: Path, aug_out: Path):
     """Call Augmentation.py to balance and augment training dataset."""
+    print_step("Step: Augment training dataset")
     if not train_dir.exists():
-        print(f"✗ Train directory not found: {train_dir}")
+        print(c("✗ Train directory not found:", Style.RED), fmt_path(train_dir))
         return
 
     cmd = [sys.executable, str(SRC / "Augmentation.py"), str(train_dir), "--output-dir", str(aug_out)]
-    print("→ Running augmentation:")
-    print(" ", " ".join(cmd))
+    print(c("→ Running augmentation", Style.YELLOW))
+    print(f"  Script: Augmentation.py")
+    print(f"  Input:  {fmt_path(train_dir)}")
+    print(f"  Output: {fmt_path(aug_out)}")
     result = subprocess.run(cmd)
     if result.returncode == 0:
-        print(f"✓ Augmentation saved to: {aug_out}")
+        print(c("✓ Augmentation saved to:", Style.GREEN), fmt_path(aug_out))
     else:
-        print("✗ Augmentation failed.")
+        print(c("✗ Augmentation failed.", Style.RED))
 
 
 def transform_dataset(source_dir: Path, output_dir: Path):
     """Run transformations and export dataset outputs using Transformation.py functions."""
+    print_step("Step: Transform dataset")
     if process_directory is None:
-        print("✗ Could not import Transformation.process_directory")
+        print(c("✗ Could not import Transformation.process_directory", Style.RED))
         return
     if not source_dir.exists():
-        print(f"✗ Source directory not found: {source_dir}")
+        print(c("✗ Source directory not found:", Style.RED), fmt_path(source_dir))
         return
+
+    print(c("→ Transforming:", Style.YELLOW), fmt_path(source_dir))
+    print(c("→ Output:", Style.YELLOW), fmt_path(output_dir))
 
     process_directory(str(source_dir), str(output_dir), mask_only=False, silent=False)
 
 
 def run_distribution(dataset_dir: Path):
     """Run Distribution.py to generate class distribution plots."""
+    print_step("Step: Distribution analysis")
     if not dataset_dir.exists():
-        print(f"✗ Dataset directory not found: {dataset_dir}")
+        print(c("✗ Dataset directory not found:", Style.RED), fmt_path(dataset_dir))
         return
 
     cmd = [sys.executable, str(SRC / "Distribution.py"), str(dataset_dir)]
-    print("→ Running distribution analysis:")
-    print(" ", " ".join(cmd))
+    print(c("→ Running distribution analysis", Style.YELLOW))
+    print(f"  Script: Distribution.py")
+    print(f"  Input:  {fmt_path(dataset_dir)}")
     result = subprocess.run(cmd)
     if result.returncode == 0:
-        print("✓ Distribution plots generated.")
+        print(c("✓ Distribution plots generated.", Style.GREEN))
     else:
-        print("✗ Distribution analysis failed.")
+        print(c("✗ Distribution analysis failed.", Style.RED))
+
+
+def demo_augment_random_image(source_dir: Path):
+    """Run augmentation demo on a random image from dataset/images."""
+    print_step("Demo: Augment random image")
+    img = pick_random_image(source_dir)
+    if img is None:
+        print(c("✗ No image found in:", Style.RED), fmt_path(source_dir))
+        return
+    cmd = [sys.executable, str(SRC / "Augmentation.py"), str(img)]
+    print(c("→ Running augmentation demo", Style.YELLOW))
+    print(f"  Image: {fmt_path(img)}")
+    subprocess.run(cmd)
+
+
+def demo_transform_random_image(source_dir: Path):
+    """Run transformation display on a random image from dataset/images."""
+    print_step("Demo: Transform random image")
+    img = pick_random_image(source_dir)
+    if img is None:
+        print(c("✗ No image found in:", Style.RED), fmt_path(source_dir))
+        return
+    cmd = [sys.executable, str(SRC / "Transformation.py"), str(img)]
+    print(c("→ Running transform demo", Style.YELLOW))
+    print(f"  Image: {fmt_path(img)}")
+    subprocess.run(cmd)
+
+
+def clean_pipeline_outputs():
+    """Delete generated pipeline folders with confirmation."""
+    print_step("Step: Clean outputs")
+    existing = [p for p in CLEAN_TARGETS if p.exists()]
+    if not existing:
+        print(c("✓ Nothing to clean.", Style.GREEN))
+        return
+
+    print(c("The following folders will be removed:", Style.YELLOW))
+    for p in existing:
+        print(f"  - {fmt_path(p)}")
+
+    confirm = input(c("Type 'YES' to confirm: ", Style.RED)).strip()
+    if confirm != "YES":
+        print(c("✗ Clean cancelled.", Style.RED))
+        return
+
+    for p in existing:
+        shutil.rmtree(p, ignore_errors=True)
+
+    print(c("✓ Clean complete.", Style.GREEN))
 
 
 def menu():
@@ -146,6 +257,9 @@ def menu():
     print("4) Transform train dataset")
     print("5) Transform predict dataset")
     print("6) Run full pipeline (split -> augment -> transform train -> transform predict)")
+    print("7) Demo augment random image (from dataset/images)")
+    print("8) Demo transform random image (from dataset/images)")
+    print("9) Clean generated outputs")
     print("0) Exit")
 
 
@@ -181,6 +295,12 @@ def run_choice(choice: str):
         source = aug if aug.exists() else train
         transform_dataset(source, out / "train")
         transform_dataset(predict, out / "predict")
+    elif choice == "7":
+        demo_augment_random_image(src)
+    elif choice == "8":
+        demo_transform_random_image(src)
+    elif choice == "9":
+        clean_pipeline_outputs()
     elif choice == "0":
         print("Bye.")
     else:
@@ -261,7 +381,7 @@ def curses_menu(options):
 def main():
     parser = argparse.ArgumentParser(description="Leaffliction pipeline CLI menu")
     parser.add_argument("--list", action="store_true", help="List menu options and exit")
-    parser.add_argument("--run", type=str, default=None, help="Run a menu option directly (e.g., 1,2,3,4,5,6)")
+    parser.add_argument("--run", type=str, default=None, help="Run a menu option directly (e.g., 1..9)")
     parser.add_argument("--text", action="store_true", help="Force text menu (no arrows)")
     args = parser.parse_args()
 
@@ -280,6 +400,9 @@ def main():
         ("Transform train dataset", "4"),
         ("Transform predict dataset", "5"),
         ("Run full pipeline (split -> augment -> transform train -> transform predict)", "6"),
+        ("Demo augment random image (from dataset/images)", "7"),
+        ("Demo transform random image (from dataset/images)", "8"),
+        ("Clean generated outputs", "9"),
         ("Exit", "0"),
     ]
 

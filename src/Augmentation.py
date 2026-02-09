@@ -20,6 +20,16 @@ import plots
 from augment import augment_class
 
 
+def _print_progress(current: int, total: int, prefix: str):
+    if total <= 0:
+        return
+    percent = int((current / total) * 100)
+    bar_len = 24
+    filled = int(bar_len * current / total)
+    bar = "#" * filled + "-" * (bar_len - filled)
+    print(f"\r{prefix} [{bar}] {current}/{total} ({percent}%)", end="", flush=True)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Data augmentation for images or folders"
@@ -144,13 +154,19 @@ def main():
             source_dir = input_path / class_name
             output_class_dir = output_root / class_name
             output_class_dir.mkdir(parents=True, exist_ok=True)
-            for img_path in source_dir.iterdir():
-                if img_path.suffix.lower() in {".jpg", ".jpeg", ".png"}:
-                    shutil.copy2(img_path, output_class_dir / img_path.name)
+            images = [p for p in source_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}]
+            total = len(images)
+            copied = 0
+            for img_path in images:
+                shutil.copy2(img_path, output_class_dir / img_path.name)
+                copied += 1
+                _print_progress(copied, total, f"Copying {class_name}")
+            if total > 0:
+                print()
 
         for class_name, missing in missing_images.items():
             if missing > 0:
-                augment_class(input_path / class_name, missing, output_root)
+                augment_class(input_path / class_name, missing, output_root, verbose=True)
 
         print(f"Augmented images saved to: {output_root}")
     else:

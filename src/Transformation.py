@@ -31,6 +31,17 @@ import csv
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
 
 
+def _print_progress(current: int, total: int, prefix: str):
+    if total <= 0:
+        return
+    percent = int((current / total) * 100)
+    bar_len = 24
+    filled = int(bar_len * current / total)
+    bar = "#" * filled + "-" * (bar_len - filled)
+    sys.stdout.write(f"\r{prefix} [{bar}] {current}/{total} ({percent}%)")
+    sys.stdout.flush()
+
+
 def is_image(filename):
     """Check if file is an image based on extension."""
     return Path(filename).suffix.lower() in IMAGE_EXTENSIONS
@@ -552,24 +563,26 @@ def process_directory(src_dir, dst_dir, mask_only=False, silent=False):
             writer = csv.DictWriter(f, fieldnames=csv_fieldnames)
             writer.writeheader()
 
+    total = len(images)
+    processed = 0
+
     for img_path in images:
-
-        if not silent:
-            print(f"\n{img_path.name}:")
-
         if mask_only:
             # Create subdirectory structure (preserve class folder) only for mask mode
             rel_path = img_path.relative_to(src_path)
             output_subdir = dst_path / rel_path.parent
             output_subdir.mkdir(parents=True, exist_ok=True)
             save_transformations(img_path, output_subdir, mask_only, silent)
+            processed += 1
+            if not silent:
+                _print_progress(processed, total, "Masking")
             continue
 
         try:
             # For dataset mode: create transformer and save dataset entry
             image = cv.imread(str(img_path))
             if image is None:
-                print(f"  ✗ Could not read: {img_path}")
+                print(f"\n  ✗ Could not read: {img_path}")
                 continue
             transformer = Transformation(image)
             features = save_dataset_entry(img_path, dst_path, transformer)
@@ -579,12 +592,15 @@ def process_directory(src_dir, dst_dir, mask_only=False, silent=False):
                 writer = csv.DictWriter(f, fieldnames=csv_fieldnames)
                 writer.writerow(features)
 
+            processed += 1
             if not silent:
-                print(f"  Saved dataset entry for: {img_path.name}")
+                _print_progress(processed, total, "Transforming")
         except Exception as e:
-            print(f"  ✗ Processing failed for {img_path.name}: {e}")
+            print(f"\n  ✗ Processing failed for {img_path.name}: {e}")
 
-    print(f"\n✓ Dataset transformations saved to: {dst_path}")
+    if not silent:
+        print()
+    print(f"✓ Dataset transformations saved to: {dst_path}")
 
 
 def main():

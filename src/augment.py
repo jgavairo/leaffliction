@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from pathlib import Path
+import sys
 
 from albumentations import (
     Rotate,
@@ -14,7 +15,7 @@ from albumentations import (
     Compose,
 )
 
-def augment_class(class_dir: Path, deficit: int, output_dir: Path):
+def augment_class(class_dir: Path, deficit: int, output_dir: Path, verbose: bool = True):
     """
     Augment images in the specified class directory to address the deficit.
 
@@ -59,4 +60,14 @@ def augment_class(class_dir: Path, deficit: int, output_dir: Path):
         output_path = output_class_dir / f"augmented_{generated}_{img_path.name}"
         if cv2.imwrite(str(output_path), augmented_image):
             generated += 1
+            if verbose:
+                percent = int((generated / deficit) * 100) if deficit > 0 else 100
+                bar_len = 20
+                filled = int(bar_len * generated / max(deficit, 1))
+                bar = "#" * filled + "-" * (bar_len - filled)
+                sys.stdout.write(f"\r    Augmenting {class_dir.name}: [{bar}] {generated}/{deficit} ({percent}%)")
+                sys.stdout.flush()
+
+    if verbose and deficit > 0:
+        print()
     
