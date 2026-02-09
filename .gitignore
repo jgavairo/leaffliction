@@ -7,3 +7,10 @@ __pycache__/
 dataset/images/
 output/
 leaf_model.keras
+dataset_and_model.zip
+signature.txt
+temp_training_data/
+dataset_train/
+dataset_predict/
+dataset_train_augmented/
+output_transform/
