@@ -5,3 +5,4 @@ opencv-python==4.10.0.84
 scikit-image==0.25.2
 tensorflow==2.16.1
 tqdm==4.57.0
+flake8==7.3.0

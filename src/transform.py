@@ -4,6 +4,7 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 
+
 def _process_image(img_path: Path, output_class_dir: Path):
     image = cv.imread(str(img_path))
     if image is None:
@@ -17,9 +18,18 @@ def _process_image(img_path: Path, output_class_dir: Path):
     height, width = image.shape[:2]
     margin = 5
     rect = (margin, margin, width - 2 * margin, height - 2 * margin)
-    cv.grabCut(image, mask, rect, bgd_model, fgd_model, 2, cv.GC_INIT_WITH_RECT)
+    cv.grabCut(
+        image,
+        mask,
+        rect,
+        bgd_model,
+        fgd_model,
+        2,
+        cv.GC_INIT_WITH_RECT,
+    )
 
-    mask = np.where((mask == cv.GC_FGD) | (mask == cv.GC_PR_FGD), 255, 0).astype("uint8")
+    fg_mask = (mask == cv.GC_FGD) | (mask == cv.GC_PR_FGD)
+    mask = np.where(fg_mask, 255, 0).astype("uint8")
     kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
     mask = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel)
     mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, kernel)
@@ -45,7 +55,9 @@ def _process_image(img_path: Path, output_class_dir: Path):
     return cv.imwrite(str(output_img_path), segmented)
 
 
-def transform_images(image_path: Path, output_path: Path, max_workers: int | None = None):
+def transform_images(
+    image_path: Path, output_path: Path, max_workers: int | None = None
+):
     """
     Apply a series of transformations to an image and save the result.
 
@@ -54,7 +66,9 @@ def transform_images(image_path: Path, output_path: Path, max_workers: int | Non
         output_path (Path): Path to save the transformed image.
     """
     img_extensions = {".jpg", ".jpeg", ".png"}
-    images = [f for f in image_path.iterdir() if f.suffix.lower() in img_extensions]
+    images = [
+        f for f in image_path.iterdir() if f.suffix.lower() in img_extensions
+    ]
     if not images:
         return
     output_class_dir = output_path / image_path.name
@@ -65,5 +79,9 @@ def transform_images(image_path: Path, output_path: Path, max_workers: int | Non
             executor.submit(_process_image, img_file, output_class_dir)
             for img_file in images
         ]
-        for _ in tqdm(as_completed(futures), total=len(futures), desc=f"Transforming {image_path.name}"):
+        for _ in tqdm(
+            as_completed(futures),
+            total=len(futures),
+            desc=f"Transforming {image_path.name}",
+        ):
             pass
