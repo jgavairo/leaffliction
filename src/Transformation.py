@@ -27,6 +27,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import math
 import csv
+from skimage import measure, filters, morphology, color, exposure, util
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif"}
 
@@ -48,103 +49,111 @@ def is_image(filename):
 
 
 class Transformation:
-    """Image transformation class using PlantCV."""
+    """Image transformation class using scikit-image."""
 
     def __init__(self, image: np.ndarray):
         """Initialize with an image array."""
         self.img = image
         self.mask = self._create_mask()
 
+    def _rgb(self):
+        """Return RGB image as float in [0, 1] for scikit-image."""
+        rgb = cv.cvtColor(self.img, cv.COLOR_BGR2RGB)
+        return util.img_as_float32(rgb)
+
     def _create_mask(self):
         """Create binary mask to isolate leaf from background."""
-        # Convert to HSV and extract saturation channel
-        hsv = cv.cvtColor(self.img, cv.COLOR_BGR2HSV)
+        # Convert to HSV and extract saturation channel (skimage expects RGB)
+        hsv = color.rgb2hsv(self._rgb())
         saturation = hsv[:, :, 1]
-        # Apply binary threshold
-        _, binary_mask = cv.threshold(saturation, 58, 255, cv.THRESH_BINARY)
-        return binary_mask
+
+        # Apply binary threshold (fixed threshold similar to 58/255)
+        binary = saturation > (58.0 / 255.0)
+        return (binary.astype(np.uint8) * 255)
 
     def gaussian_blur(self):
         """Gaussian Blur transformation."""
         # Apply Gaussian blur to the mask for smoothing
-        blurred = cv.GaussianBlur(self.mask, (7, 7), 0)
+        mask_bool = self.mask > 0
+        blurred = filters.gaussian(mask_bool.astype(float), sigma=1.5, preserve_range=True)
 
         # Clean self.mask: fill holes and remove isolated pixels
-        open_kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (7, 7))
-        close_kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
-        self.mask = cv.morphologyEx(self.mask, cv.MORPH_CLOSE, close_kernel)
-        self.mask = cv.morphologyEx(self.mask, cv.MORPH_OPEN, open_kernel)
+        cleaned = morphology.binary_closing(mask_bool, morphology.disk(5))
+        cleaned = morphology.binary_opening(cleaned, morphology.disk(7))
+        self.mask = (cleaned.astype(np.uint8) * 255)
 
         # Return a 3-channel visualization of the blurred mask
-        return cv.cvtColor(blurred, cv.COLOR_GRAY2BGR)
+        blurred_u8 = util.img_as_ubyte(np.clip(blurred, 0, 1))
+        return cv.cvtColor(blurred_u8, cv.COLOR_GRAY2BGR)
 
     def masked_leaf(self):
         """Mask transformation - isolate leaf."""
-        # Apply binary mask to original image to keep colors
-        result = cv.bitwise_and(self.img, self.img, mask=self.mask)
-        # Set background to white
-        result[self.mask == 0] = [255, 255, 255]
+        mask_bool = self.mask > 0
+        result = self.img.copy()
+        result[~mask_bool] = [255, 255, 255]
 
         # Remove dark pixels (0-50) from the mask for next transformations
-        gray = cv.cvtColor(self.img, cv.COLOR_BGR2GRAY)
-        dark_pixels = gray <= 30
-        self.mask[dark_pixels] = 0
+        gray = color.rgb2gray(self._rgb())
+        dark_pixels = gray <= (30.0 / 255.0)
+        mask_bool[dark_pixels] = False
 
         # Fill the holes left by dark pixel removal
-        kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
-        self.mask = cv.morphologyEx(self.mask, cv.MORPH_CLOSE, kernel)
-
-        second_kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
-        self.mask = cv.morphologyEx(self.mask, cv.MORPH_OPEN, second_kernel)
+        mask_bool = morphology.binary_closing(mask_bool, morphology.disk(5))
+        mask_bool = morphology.binary_opening(mask_bool, morphology.disk(5))
+        self.mask = (mask_bool.astype(np.uint8) * 255)
 
         return result
 
     def roi_contours(self):
         """ROI Objects transformation - draw contours."""
-        # Find contours to get bounding rectangle
-        contours, _ = cv.findContours(
-            self.mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
-        )
-
-        # Start with original image
+        mask_bool = self.mask > 0
         result = self.img.copy()
 
+        contours = measure.find_contours(mask_bool.astype(float), 0.5)
         if contours:
             # Fill the masked area in green
-            result[self.mask > 0] = [0, 255, 0]
+            result[mask_bool] = [0, 255, 0]
 
-            # Get bounding rectangle for all contours combined
-            all_points = np.vstack([c.reshape(-1, 2) for c in contours])
-            x, y, w, h = cv.boundingRect(all_points)
+            labeled = measure.label(mask_bool)
+            regions = measure.regionprops(labeled)
+            if regions:
+                largest = max(regions, key=lambda r: r.area)
+                min_row, min_col, max_row, max_col = largest.bbox
+                x, y, w, h = min_col, min_row, (max_col - min_col), (max_row - min_row)
+                cv.rectangle(result, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-            # Draw single rectangle around entire leaf
-            cv.rectangle(result, (x, y), (x + w, y + h), (255, 0, 0), 2)
-
-            # Also draw contours in red
-            cv.drawContours(result, contours, -1, (0, 0, 255), 2)
+            # Draw contours in red
+            for c in contours:
+                pts = np.flip(c, axis=1).astype(np.int32)  # (row, col) -> (x, y)
+                if pts.shape[0] >= 2:
+                    cv.polylines(result, [pts], isClosed=True, color=(0, 0, 255), thickness=2)
 
         return result
 
     def analyze_shape(self):
-        """Analyze shape and annotate basic metrics using OpenCV."""
-        # Compute basic shape metrics and annotate them on a copy
+        """Analyze shape and annotate basic metrics using scikit-image."""
         result = self.img.copy()
+        mask_bool = self.mask > 0
 
-        contours, _ = cv.findContours(self.mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-        if not contours:
+        labeled = measure.label(mask_bool)
+        regions = measure.regionprops(labeled)
+        if not regions:
             return result
 
-        # Use the largest contour (assumed leaf)
-        largest = max(contours, key=cv.contourArea)
-        area = cv.contourArea(largest)
-        perimeter = cv.arcLength(largest, True)
-        x, y, w, h = cv.boundingRect(largest)
+        largest = max(regions, key=lambda r: r.area)
+        area = float(largest.area)
+        perimeter = float(largest.perimeter)
+        min_row, min_col, max_row, max_col = largest.bbox
+        x, y, w, h = min_col, min_row, (max_col - min_col), (max_row - min_row)
 
-        # Draw contour and bounding box
-        cv.drawContours(result, [largest], -1, (0, 255, 255), 2)
+        contours = measure.find_contours(mask_bool.astype(float), 0.5)
+        for c in contours:
+            pts = np.flip(c, axis=1).astype(np.int32)
+            if pts.shape[0] >= 2:
+                cv.polylines(result, [pts], isClosed=True, color=(0, 255, 255), thickness=2)
+
         cv.rectangle(result, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
-        # Annotate metrics
         text = f"Area: {int(area)}  Perim: {int(perimeter)}"
         cv.putText(result, text, (x, max(10, y - 10)), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
 
@@ -171,80 +180,86 @@ class Transformation:
 
         return img
 
-    def pseudolandmarks(self):
-        """Pseudolandmarks transformation."""
+    def _pseudolandmarks_skimage(self):
+        """Pseudolandmarks using scikit-image contours and equal arc-length sampling."""
         result = self.img.copy()
-        # Implement a simple y-axis pseudolandmarks: for N horizontal slices,
-        # find leftmost and rightmost contour intersections at that y.
-        contours, _ = cv.findContours(self.mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+
+        contours = measure.find_contours(self.mask, 0.5)
         if not contours:
             return result
 
-        largest = max(contours, key=cv.contourArea).reshape(-1, 2)
-        ys = largest[:, 1]
-        y_min, y_max = int(ys.min()), int(ys.max())
+        largest = max(contours, key=lambda c: c.shape[0])
+        if largest.shape[0] < 2:
+            return result
 
-        n_slices = 12
-        slice_ys = np.linspace(y_min, y_max, n_slices, dtype=int)
+        # Sample N points along the contour by arc length
+        n_points = 24
+        diffs = np.diff(largest, axis=0)
+        dists = np.hypot(diffs[:, 0], diffs[:, 1])
+        cumdist = np.concatenate(([0.0], np.cumsum(dists)))
+        total = float(cumdist[-1])
+        if total <= 0:
+            return result
 
-        left_points = []
-        right_points = []
-        center_points = []
-
-        for y in slice_ys:
-            # find contour points at this y (rows)
-            xs_at_y = largest[largest[:, 1] == y][:, 0]
-            if xs_at_y.size == 0:
-                # approximate by finding nearest y
-                dy = np.abs(ys - y)
-                idx = np.argmin(dy)
-                pt = largest[idx]
-                left_x = right_x = int(pt[0])
+        targets = np.linspace(0, total, n_points)
+        landmarks = []
+        for t in targets:
+            idx = int(np.searchsorted(cumdist, t, side="left"))
+            if idx <= 0:
+                pt = largest[0]
+            elif idx >= len(largest):
+                pt = largest[-1]
             else:
-                left_x = int(xs_at_y.min())
-                right_x = int(xs_at_y.max())
+                t0 = cumdist[idx - 1]
+                t1 = cumdist[idx]
+                if t1 > t0:
+                    ratio = (t - t0) / (t1 - t0)
+                else:
+                    ratio = 0.0
+                pt = largest[idx - 1] + ratio * (largest[idx] - largest[idx - 1])
 
-            left_points.append((left_x, int(y)))
-            right_points.append((right_x, int(y)))
-            center_points.append((int((left_x + right_x) / 2), int(y)))
+            # skimage returns (row, col) -> OpenCV expects (x, y)
+            x = int(pt[1])
+            y = int(pt[0])
+            landmarks.append((x, y))
 
-        # Draw points
-        for p in left_points:
-            cv.circle(result, p, 4, (0, 0, 255), -1)
-        for p in right_points:
-            cv.circle(result, p, 4, (255, 0, 255), -1)
-        for p in center_points:
-            cv.circle(result, p, 4, (0, 255, 0), -1)
+        return self._draw_pseudolandmarks(result, landmarks, (0, 255, 0), radius=4)
 
-        return result
+    def pseudolandmarks(self):
+        """Pseudolandmarks transformation."""
+        return self._pseudolandmarks_skimage()
 
     def color_histogram(self):
         """Color Histogram transformation."""
         # Build histograms for RGB, HSV and LAB channels and return as image
-        # (this method is kept to allow saving the histogram as an image)
-        channels = {}
-        b, g, r = cv.split(self.img)
-        channels['blue'] = b
-        channels['green'] = g
-        channels['red'] = r
+        rgb = self._rgb()
+        mask_bool = self.mask > 0
 
-        hsv = cv.cvtColor(self.img, cv.COLOR_BGR2HSV)
+        channels = {
+            'red': rgb[:, :, 0],
+            'green': rgb[:, :, 1],
+            'blue': rgb[:, :, 2],
+        }
+
+        hsv = color.rgb2hsv(rgb)
         channels['hue'] = hsv[:, :, 0]
         channels['saturation'] = hsv[:, :, 1]
         channels['value'] = hsv[:, :, 2]
 
-        lab = cv.cvtColor(self.img, cv.COLOR_BGR2LAB)
+        lab = color.rgb2lab(rgb)
         channels['lightness'] = lab[:, :, 0]
         channels['green-magenta'] = lab[:, :, 1]
         channels['blue-yellow'] = lab[:, :, 2]
 
-        # Compute normalized histograms (masked)
         hist_data = {}
-        mask = self.mask
         for name, ch in channels.items():
-            hist = cv.calcHist([ch], [0], mask, [256], [0, 256])
-            total = hist.sum() if hist.sum() != 0 else 1
-            hist = (hist.flatten() / total) * 100.0
+            values = ch[mask_bool]
+            if values.size == 0:
+                hist = np.zeros(256, dtype=float)
+            else:
+                hist, _ = exposure.histogram(values, nbins=256)
+                total = hist.sum() if hist.sum() != 0 else 1
+                hist = (hist / total) * 100.0
             hist_data[name] = hist
 
         # Render a small figure to an image for saving
@@ -274,28 +289,34 @@ class Transformation:
 
     def color_histogram_data(self):
         """Return histogram data dict (name -> 256-array) for direct plotting."""
-        channels = {}
-        b, g, r = cv.split(self.img)
-        channels['blue'] = b
-        channels['green'] = g
-        channels['red'] = r
+        rgb = self._rgb()
+        mask_bool = self.mask > 0
 
-        hsv = cv.cvtColor(self.img, cv.COLOR_BGR2HSV)
+        channels = {
+            'red': rgb[:, :, 0],
+            'green': rgb[:, :, 1],
+            'blue': rgb[:, :, 2],
+        }
+
+        hsv = color.rgb2hsv(rgb)
         channels['hue'] = hsv[:, :, 0]
         channels['saturation'] = hsv[:, :, 1]
         channels['value'] = hsv[:, :, 2]
 
-        lab = cv.cvtColor(self.img, cv.COLOR_BGR2LAB)
+        lab = color.rgb2lab(rgb)
         channels['lightness'] = lab[:, :, 0]
         channels['green-magenta'] = lab[:, :, 1]
         channels['blue-yellow'] = lab[:, :, 2]
 
         hist_data = {}
-        mask = self.mask
         for name, ch in channels.items():
-            hist = cv.calcHist([ch], [0], mask, [256], [0, 256])
-            total = hist.sum() if hist.sum() != 0 else 1
-            hist = (hist.flatten() / total) * 100.0
+            values = ch[mask_bool]
+            if values.size == 0:
+                hist = np.zeros(256, dtype=float)
+            else:
+                hist, _ = exposure.histogram(values, nbins=256)
+                total = hist.sum() if hist.sum() != 0 else 1
+                hist = (hist / total) * 100.0
             hist_data[name] = hist
 
         return hist_data
@@ -326,7 +347,7 @@ def display_transformations(image_path, silent=False, max_display=200):
     transforms = transformer.get_all_transformations()
 
     # Create smaller figure and compact GridSpec to reduce window size
-    fig = plt.figure(figsize=(8, 6))
+    fig = plt.figure(figsize=(8, 6), constrained_layout=True)
     gs = fig.add_gridspec(
         3,
         3,
@@ -403,11 +424,7 @@ def display_transformations(image_path, silent=False, max_display=200):
     ax_hist.set_title("ColorHistogram")
     ax_hist.axis('on')
 
-    # Compact layout and show
-    try:
-        fig.tight_layout(rect=[0, 0, 0.98, 0.92])
-    except Exception:
-        pass
+    # Show
     plt.show()
 
 
