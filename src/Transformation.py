@@ -17,15 +17,12 @@ Examples:
 """
 
 import sys
-import os
-import tempfile
 from pathlib import Path
 
 import cv2 as cv
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-import math
 import csv
 from skimage import measure, filters, morphology, color, exposure, util
 
@@ -75,7 +72,9 @@ class Transformation:
         """Gaussian Blur transformation."""
         # Apply Gaussian blur to the mask for smoothing
         mask_bool = self.mask > 0
-        blurred = filters.gaussian(mask_bool.astype(float), sigma=1.5, preserve_range=True)
+        blurred = filters.gaussian(
+            mask_bool.astype(float), sigma=1.5, preserve_range=True
+        )
 
         # Clean self.mask: fill holes and remove isolated pixels
         cleaned = morphology.binary_closing(mask_bool, morphology.disk(5))
@@ -119,14 +118,26 @@ class Transformation:
             if regions:
                 largest = max(regions, key=lambda r: r.area)
                 min_row, min_col, max_row, max_col = largest.bbox
-                x, y, w, h = min_col, min_row, (max_col - min_col), (max_row - min_row)
+                x, y, w, h = (
+                    min_col,
+                    min_row,
+                    (max_col - min_col),
+                    (max_row - min_row),
+                )
                 cv.rectangle(result, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
             # Draw contours in red
             for c in contours:
-                pts = np.flip(c, axis=1).astype(np.int32)  # (row, col) -> (x, y)
+                pts = np.flip(c, axis=1).astype(np.int32)
+                # (row, col) -> (x, y)
                 if pts.shape[0] >= 2:
-                    cv.polylines(result, [pts], isClosed=True, color=(0, 0, 255), thickness=2)
+                    cv.polylines(
+                        result,
+                        [pts],
+                        isClosed=True,
+                        color=(0, 0, 255),
+                        thickness=2,
+                    )
 
         return result
 
@@ -150,12 +161,26 @@ class Transformation:
         for c in contours:
             pts = np.flip(c, axis=1).astype(np.int32)
             if pts.shape[0] >= 2:
-                cv.polylines(result, [pts], isClosed=True, color=(0, 255, 255), thickness=2)
+                cv.polylines(
+                    result,
+                    [pts],
+                    isClosed=True,
+                    color=(0, 255, 255),
+                    thickness=2,
+                )
 
         cv.rectangle(result, (x, y), (x + w, y + h), (255, 0, 0), 2)
 
         text = f"Area: {int(area)}  Perim: {int(perimeter)}"
-        cv.putText(result, text, (x, max(10, y - 10)), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        cv.putText(
+            result,
+            text,
+            (x, max(10, y - 10)),
+            cv.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 0, 0),
+            2,
+        )
 
         return result
 
@@ -181,7 +206,10 @@ class Transformation:
         return img
 
     def _pseudolandmarks_skimage(self):
-        """Pseudolandmarks using scikit-image contours and equal arc-length sampling."""
+        """Pseudolandmarks using scikit-image contours.
+
+        Uses equal arc-length sampling.
+        """
         result = self.img.copy()
 
         contours = measure.find_contours(self.mask, 0.5)
@@ -216,14 +244,18 @@ class Transformation:
                     ratio = (t - t0) / (t1 - t0)
                 else:
                     ratio = 0.0
-                pt = largest[idx - 1] + ratio * (largest[idx] - largest[idx - 1])
+                pt = largest[idx - 1] + ratio * (
+                    largest[idx] - largest[idx - 1]
+                )
 
             # skimage returns (row, col) -> OpenCV expects (x, y)
             x = int(pt[1])
             y = int(pt[0])
             landmarks.append((x, y))
 
-        return self._draw_pseudolandmarks(result, landmarks, (0, 255, 0), radius=4)
+        return self._draw_pseudolandmarks(
+            result, landmarks, (0, 255, 0), radius=4
+        )
 
     def pseudolandmarks(self):
         """Pseudolandmarks transformation."""
@@ -266,16 +298,28 @@ class Transformation:
         fig, ax = plt.subplots(figsize=(3, 6), dpi=150)
         x = np.arange(256)
         color_map = {
-            'blue': 'b', 'green': 'g', 'red': 'r',
-            'hue': 'm', 'saturation': 'c', 'value': 'y',
-            'lightness': 'k', 'green-magenta': 'tab:olive', 'blue-yellow': 'tab:orange'
+            "blue": "b",
+            "green": "g",
+            "red": "r",
+            "hue": "m",
+            "saturation": "c",
+            "value": "y",
+            "lightness": "k",
+            "green-magenta": "tab:olive",
+            "blue-yellow": "tab:orange",
         }
         for name, hist in hist_data.items():
-            ax.plot(x, hist, label=name, color=color_map.get(name, 'k'), linewidth=1.0)
+            ax.plot(
+                x,
+                hist,
+                label=name,
+                color=color_map.get(name, "k"),
+                linewidth=1.0,
+            )
 
-        ax.set_xlabel('pixel intensity')
-        ax.set_ylabel('proportion of pixels (%)')
-        ax.legend(fontsize='xx-small')
+        ax.set_xlabel("pixel intensity")
+        ax.set_ylabel("proportion of pixels (%)")
+        ax.legend(fontsize="xx-small")
         ax.set_xlim(0, 255)
         fig.tight_layout()
         canvas = FigureCanvas(fig)
@@ -288,7 +332,10 @@ class Transformation:
         return hist_img
 
     def color_histogram_data(self):
-        """Return histogram data dict (name -> 256-array) for direct plotting."""
+        """Return histogram data dict (name -> 256-array).
+
+        Used for direct plotting.
+        """
         rgb = self._rgb()
         mask_bool = self.mask > 0
 
@@ -360,7 +407,9 @@ def display_transformations(image_path, silent=False, max_display=200):
         width_ratios=[1.0, 1.0, 0.9],
         height_ratios=[1.0, 1.0, 1.0],
     )
-    fig.suptitle(f"Image Transformations: {image_path.name}", fontsize=14)
+    fig.suptitle(
+        f"Image Transformations: {image_path.name}", fontsize=14
+    )
 
     # Show original in top-left
     ax_orig = fig.add_subplot(gs[0, 0])
@@ -372,7 +421,8 @@ def display_transformations(image_path, silent=False, max_display=200):
     # fig1(orig) fig4     ->  (0,0) (0,1)
     # fig2       fig5 fig7 ->  (1,0) (1,1) (1,2)
     # fig3       fig6     ->  (2,0) (2,1)
-    transform_list = list(transforms.items())[:-1]  # All except ColorHistogram
+    # All except ColorHistogram
+    transform_list = list(transforms.items())[:-1]
     positions = [(1, 0), (2, 0), (0, 1), (1, 1), (2, 1)]
 
     for idx, (name, func) in enumerate(transform_list):
@@ -395,7 +445,9 @@ def display_transformations(image_path, silent=False, max_display=200):
             scale = max_display / float(max_dim)
             new_w = int(w * scale)
             new_h = int(h * scale)
-            display_img = cv.resize(display_img, (new_w, new_h), interpolation=cv.INTER_AREA)
+            display_img = cv.resize(
+                display_img, (new_w, new_h), interpolation=cv.INTER_AREA
+            )
 
         ax.imshow(display_img)
         ax.set_title(name)
@@ -409,27 +461,40 @@ def display_transformations(image_path, silent=False, max_display=200):
         hist_data = transformer.color_histogram_data()
         x = np.arange(256)
         color_map = {
-            'blue': 'b', 'green': 'g', 'red': 'r',
-            'hue': 'm', 'saturation': 'c', 'value': 'y',
-            'lightness': 'k', 'green-magenta': 'tab:olive', 'blue-yellow': 'tab:orange'
+            "blue": "b",
+            "green": "g",
+            "red": "r",
+            "hue": "m",
+            "saturation": "c",
+            "value": "y",
+            "lightness": "k",
+            "green-magenta": "tab:olive",
+            "blue-yellow": "tab:orange",
         }
         for name, hist in hist_data.items():
-            ax_hist.plot(x, hist, label=name, color=color_map.get(name, 'k'), linewidth=1.0)
-        ax_hist.set_xlabel('pixel intensity')
-        ax_hist.set_ylabel('proportion of pixels (%)')
+            ax_hist.plot(
+                x,
+                hist,
+                label=name,
+                color=color_map.get(name, "k"),
+                linewidth=1.0,
+            )
+        ax_hist.set_xlabel("pixel intensity")
+        ax_hist.set_ylabel("proportion of pixels (%)")
         ax_hist.set_xlim(0, 255)
-        ax_hist.legend(fontsize='xx-small')
+        ax_hist.legend(fontsize="xx-small")
     except Exception:
-        ax_hist.text(0.5, 0.5, 'No histogram', ha='center')
+        ax_hist.text(0.5, 0.5, "No histogram", ha="center")
     ax_hist.set_title("ColorHistogram")
-    ax_hist.axis('on')
+    ax_hist.axis("on")
 
     # Show
     plt.show()
 
 
-def save_transformations(image_path, output_dir, mask_only=False,
-                         silent=False):
+def save_transformations(
+    image_path, output_dir, mask_only=False, silent=False
+):
     """Save all transformations to files."""
     image = cv.imread(str(image_path))
     if image is None:
@@ -472,8 +537,12 @@ def save_transformations(image_path, output_dir, mask_only=False,
     return output_paths
 
 
-def save_dataset_entry(image_path: Path, output_root: Path, transformer: Transformation,
-                       target_size=(224, 224)):
+def save_dataset_entry(
+    image_path: Path,
+    output_root: Path,
+    transformer: Transformation,
+    target_size=(224, 224),
+):
     """Save mask, resized normalized image and return features dict."""
     # Prepare output dirs
     rel_parent = image_path.parent.name
@@ -487,7 +556,9 @@ def save_dataset_entry(image_path: Path, output_root: Path, transformer: Transfo
     mask = transformer.mask
 
     # Compute shape features using largest contour
-    contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv.findContours(
+        mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
+    )
     area = 0
     perimeter = 0
     bbox = (0, 0, 0, 0)
@@ -500,7 +571,11 @@ def save_dataset_entry(image_path: Path, output_root: Path, transformer: Transfo
 
     # Mean color inside mask
     mean_bgr = cv.mean(transformer.img, mask=mask)[:3]
-    mean_r, mean_g, mean_b = float(mean_bgr[2]), float(mean_bgr[1]), float(mean_bgr[0])
+    mean_r, mean_g, mean_b = (
+        float(mean_bgr[2]),
+        float(mean_bgr[1]),
+        float(mean_bgr[0]),
+    )
 
     # Save files
     base_name = image_path.stem
@@ -513,7 +588,11 @@ def save_dataset_entry(image_path: Path, output_root: Path, transformer: Transfo
 
     # Create normalized resized image (keep colors of masked)
     h, w = masked.shape[:2]
-    norm = cv.resize(masked, (target_size[1], target_size[0]), interpolation=cv.INTER_AREA)
+    norm = cv.resize(
+        masked,
+        (target_size[1], target_size[0]),
+        interpolation=cv.INTER_AREA,
+    )
     cv.imwrite(str(norm_out / norm_name), norm)
 
     # Feature dict
@@ -547,8 +626,11 @@ def process_directory(src_dir, dst_dir, mask_only=False, silent=False):
     dst_path.mkdir(parents=True, exist_ok=True)
 
     # Find all images
-    images = [f for f in src_path.rglob("*")
-              if f.is_file() and is_image(f.name)]
+    images = [
+        f
+        for f in src_path.rglob("*")
+        if f.is_file() and is_image(f.name)
+    ]
 
     if not images:
         print(f"No images found in: {src_dir}")
@@ -585,7 +667,8 @@ def process_directory(src_dir, dst_dir, mask_only=False, silent=False):
 
     for img_path in images:
         if mask_only:
-            # Create subdirectory structure (preserve class folder) only for mask mode
+            # Create subdirectory structure (preserve class folder)
+            # only for mask mode
             rel_path = img_path.relative_to(src_path)
             output_subdir = dst_path / rel_path.parent
             output_subdir.mkdir(parents=True, exist_ok=True)

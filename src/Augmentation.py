@@ -9,7 +9,6 @@ from albumentations import (
     Rotate,
     HueSaturationValue,
     RandomBrightnessContrast,
-    RandomGamma,
     RandomScale,
     RandomResizedCrop,
     GaussianBlur,
@@ -27,7 +26,11 @@ def _print_progress(current: int, total: int, prefix: str):
     bar_len = 24
     filled = int(bar_len * current / total)
     bar = "#" * filled + "-" * (bar_len - filled)
-    print(f"\r{prefix} [{bar}] {current}/{total} ({percent}%)", end="", flush=True)
+    print(
+        f"\r{prefix} [{bar}] {current}/{total} ({percent}%)",
+        end="",
+        flush=True,
+    )
 
 
 def parse_args():
@@ -52,11 +55,25 @@ def build_augmentations():
     return Compose(
         [
             Rotate(limit=100, p=0.5),
-            HueSaturationValue(hue_shift_limit=0, sat_shift_limit=(40, 40), val_shift_limit=0, p=0.5),
-            RandomBrightnessContrast(brightness_limit=(0.15, 0.15), contrast_limit=0, p=0.4),
+            HueSaturationValue(
+                hue_shift_limit=0,
+                sat_shift_limit=(40, 40),
+                val_shift_limit=0,
+                p=0.5,
+            ),
+            RandomBrightnessContrast(
+                brightness_limit=(0.15, 0.15),
+                contrast_limit=0,
+                p=0.4,
+            ),
             GaussianBlur(p=0.3),
             RandomScale(scale_limit=0.2, p=0.4),
-            Perspective(scale=(0.08, 0.18), keep_size=True, fit_output=True, p=0.3),
+            Perspective(
+                scale=(0.08, 0.18),
+                keep_size=True,
+                fit_output=True,
+                p=0.3,
+            ),
         ]
     )
 
@@ -65,10 +82,40 @@ def build_demo_augmentations():
     return [
         ("rotation", Rotate(limit=100, p=1.0)),
         ("blur", GaussianBlur(blur_limit=50, p=1.0)),
-        ("contrast", HueSaturationValue(hue_shift_limit=0, sat_shift_limit=(60, 60), val_shift_limit=0, p=1.0)),
-        ("scaling", RandomResizedCrop(size=(256, 256), scale=(0.5, 0.7), p=1.0)),
-        ("illumination", RandomBrightnessContrast(brightness_limit=(0.4, 0.4), contrast_limit=0, p=1.0)),
-        ("projective", Perspective(scale=(0.3, 1.0), keep_size=True, fit_output=True, p=1.0)),
+        (
+            "contrast",
+            HueSaturationValue(
+                hue_shift_limit=0,
+                sat_shift_limit=(60, 60),
+                val_shift_limit=0,
+                p=1.0,
+            ),
+        ),
+        (
+            "scaling",
+            RandomResizedCrop(
+                size=(256, 256),
+                scale=(0.5, 0.7),
+                p=1.0,
+            ),
+        ),
+        (
+            "illumination",
+            RandomBrightnessContrast(
+                brightness_limit=(0.4, 0.4),
+                contrast_limit=0,
+                p=1.0,
+            ),
+        ),
+        (
+            "projective",
+            Perspective(
+                scale=(0.3, 1.0),
+                keep_size=True,
+                fit_output=True,
+                p=1.0,
+            ),
+        ),
     ]
 
 
@@ -79,15 +126,22 @@ def is_image_file(path: Path):
 def iter_images(input_path: Path):
     if input_path.is_file() and is_image_file(input_path):
         return [input_path]
-    return [p for p in input_path.rglob("*") if p.is_file() and is_image_file(p)]
+    return [
+        p
+        for p in input_path.rglob("*")
+        if p.is_file() and is_image_file(p)
+    ]
 
 
-def save_augmented(image_path: Path, output_root: Path, augmenter, variations: int):
+def save_augmented(
+    image_path: Path, output_root: Path, augmenter, variations: int
+):
     image = cv2.imread(str(image_path))
     if image is None:
         return
 
-    for i in range(6):  # Always use fixed 6 demo augmentations
+    for i in range(6):
+        # Always use fixed 6 demo augmentations
         augmented = augmenter(image=image)["image"]
         relative_parent = image_path.parent
         output_dir = output_root / relative_parent.name
@@ -154,7 +208,11 @@ def main():
             source_dir = input_path / class_name
             output_class_dir = output_root / class_name
             output_class_dir.mkdir(parents=True, exist_ok=True)
-            images = [p for p in source_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}]
+            images = [
+                p
+                for p in source_dir.iterdir()
+                if p.suffix.lower() in {".jpg", ".jpeg", ".png"}
+            ]
             total = len(images)
             copied = 0
             for img_path in images:
@@ -166,7 +224,12 @@ def main():
 
         for class_name, missing in missing_images.items():
             if missing > 0:
-                augment_class(input_path / class_name, missing, output_root, verbose=True)
+                augment_class(
+                    input_path / class_name,
+                    missing,
+                    output_root,
+                    verbose=True,
+                )
 
         print(f"Augmented images saved to: {output_root}")
     else:
@@ -174,7 +237,9 @@ def main():
         print(f"Augmented images saved to: {output_root}")
 
     if input_path.is_dir():
-        distribution = parser.collect_distribution(parser.list_class_dirs(output_root))
+        distribution = parser.collect_distribution(
+            parser.list_class_dirs(output_root)
+        )
         labels = list(distribution.keys())
         counts = list(distribution.values())
         if graphs_dir is None:

@@ -9,13 +9,15 @@ from albumentations import (
     RandomBrightnessContrast,
     RandomGamma,
     RandomScale,
-    GridDistortion,
     GaussianBlur,
     Perspective,
     Compose,
 )
 
-def augment_class(class_dir: Path, deficit: int, output_dir: Path, verbose: bool = True):
+
+def augment_class(
+    class_dir: Path, deficit: int, output_dir: Path, verbose: bool = True
+):
     """
     Augment images in the specified class directory to address the deficit.
 
@@ -28,19 +30,23 @@ def augment_class(class_dir: Path, deficit: int, output_dir: Path, verbose: bool
         None
     """
     img_extensions = {".jpg", ".jpeg", ".png"}
-    images = [f for f in class_dir.iterdir() if f.suffix.lower() in img_extensions]
+    images = [
+        f for f in class_dir.iterdir() if f.suffix.lower() in img_extensions
+    ]
     if not images:
         return
 
-    augmentations = Compose([
-        Rotate(limit=20, p=0.5),
-        RandomResizedCrop(size=(224, 224), p=0.4),
-        RandomScale(scale_limit=0.2, p=0.4),
-        RandomBrightnessContrast(p=0.5),
-        RandomGamma(p=0.4),
-        GaussianBlur(p=0.3),
-        Perspective(scale=(0.02, 0.08), p=0.3),
-    ])
+    augmentations = Compose(
+        [
+            Rotate(limit=20, p=0.5),
+            RandomResizedCrop(size=(224, 224), p=0.4),
+            RandomScale(scale_limit=0.2, p=0.4),
+            RandomBrightnessContrast(p=0.5),
+            RandomGamma(p=0.4),
+            GaussianBlur(p=0.3),
+            Perspective(scale=(0.02, 0.08), p=0.3),
+        ]
+    )
 
     output_class_dir = output_dir / class_dir.name
     output_class_dir.mkdir(parents=True, exist_ok=True)
@@ -57,17 +63,24 @@ def augment_class(class_dir: Path, deficit: int, output_dir: Path, verbose: bool
         augmented = augmentations(image=image)
         augmented_image = augmented["image"]
 
-        output_path = output_class_dir / f"augmented_{generated}_{img_path.name}"
+        output_path = (
+            output_class_dir / f"augmented_{generated}_{img_path.name}"
+        )
         if cv2.imwrite(str(output_path), augmented_image):
             generated += 1
             if verbose:
-                percent = int((generated / deficit) * 100) if deficit > 0 else 100
+                if deficit > 0:
+                    percent = int((generated / deficit) * 100)
+                else:
+                    percent = 100
                 bar_len = 20
                 filled = int(bar_len * generated / max(deficit, 1))
                 bar = "#" * filled + "-" * (bar_len - filled)
-                sys.stdout.write(f"\r    Augmenting {class_dir.name}: [{bar}] {generated}/{deficit} ({percent}%)")
+                sys.stdout.write(
+                    f"\r    Augmenting {class_dir.name}: [{bar}] "
+                    f"{generated}/{deficit} ({percent}%)"
+                )
                 sys.stdout.flush()
 
     if verbose and deficit > 0:
         print()
-    
