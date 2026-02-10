@@ -8,7 +8,6 @@ dataset/images/
 output/
 leaf_model.keras
 dataset_and_model.zip
-signature.txt
 temp_training_data/
 dataset_train/
 dataset_predict/

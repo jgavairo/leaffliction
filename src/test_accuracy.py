@@ -2,14 +2,14 @@ import sys
 import os
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.preprocessing import image
+import cv2 as cv
 from pathlib import Path
 from collections import defaultdict
 
 # Configuration (Doit être identique à train.py et predict.py)
 IMG_HEIGHT = 256
 IMG_WIDTH = 256
-MODEL_PATH = "leaf_model.keras"
+MODEL_PATH = "dataset_and_model/leaf_model.keras"
 
 # TRES IMPORTANT : L'ordre alphabétique exact donné par train.py
 CLASS_NAMES = [
@@ -29,9 +29,17 @@ def predict_image(model, img_path):
     Prédit la classe d'une image
     Retourne: (predicted_class_name, confidence, predicted_class_index)
     """
-    # Chargement et prétraitement de l'image
-    img = image.load_img(img_path, target_size=(IMG_HEIGHT, IMG_WIDTH))
-    img_array = image.img_to_array(img)
+    # Chargement de l'image avec OpenCV (déjà normalisée)
+    img = cv.imread(str(img_path))
+    if img is None:
+        raise ValueError(f"Impossible de charger l'image {img_path}")
+
+    # IMPORTANT: OpenCV charge en BGR, TensorFlow attend RGB
+    img_rgb = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+
+    # L'image est déjà redimensionnée et transformée
+    # Conversion en tableau numpy pour le modèle
+    img_array = img_rgb.astype(np.float32)
     img_batch = tf.expand_dims(img_array, 0)
 
     # Prédiction

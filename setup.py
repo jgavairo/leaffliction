@@ -287,6 +287,66 @@ def demo_transform_random_image(source_dir: Path):
     subprocess.run(cmd)
 
 
+def run_training(dataset_dir: Path):
+    """Run train.py on the specified dataset directory."""
+    print_step("Step: Train model")
+    if not dataset_dir.exists():
+        print(
+            c("✗ Dataset directory not found:", Style.RED),
+            fmt_path(dataset_dir),
+        )
+        return
+
+    cmd = [
+        sys.executable,
+        str(SRC / "train.py"),
+        str(dataset_dir),
+    ]
+    print(c("→ Running training", Style.YELLOW))
+    print("  Script: train.py")
+    print(f"  Dataset: {fmt_path(dataset_dir)}")
+    result = subprocess.run(cmd)
+    if result.returncode == 0:
+        print(c("✓ Training complete.", Style.GREEN))
+    else:
+        print(c("✗ Training failed.", Style.RED))
+
+
+def run_test_accuracy(test_dir: Path):
+    """Run test_accuracy.py on the specified test dataset."""
+    print_step("Step: Test model accuracy")
+
+    model_path = ROOT / "dataset_and_model" / "leaf_model.keras"
+    if not model_path.exists():
+        print(
+            c("✗ Model not found. Train the model first.", Style.RED)
+        )
+        return
+
+    if not test_dir.exists():
+        print(
+            c("✗ Test directory not found:", Style.RED),
+            fmt_path(test_dir),
+        )
+        return
+
+    cmd = [
+        sys.executable,
+        str(SRC / "test_accuracy.py"),
+        str(test_dir),
+        "30",  # Max 30 images per class
+    ]
+    print(c("→ Running accuracy test", Style.YELLOW))
+    print("  Script: test_accuracy.py")
+    print(f"  Test data: {fmt_path(test_dir)}")
+    print("  Max images per class: 30")
+    result = subprocess.run(cmd)
+    if result.returncode == 0:
+        print(c("✓ Accuracy test complete.", Style.GREEN))
+    else:
+        print(c("✗ Accuracy test failed.", Style.RED))
+
+
 def clean_pipeline_outputs():
     """Delete generated pipeline folders with confirmation."""
     print_step("Step: Clean outputs")
@@ -310,6 +370,44 @@ def clean_pipeline_outputs():
     print(c("✓ Clean complete.", Style.GREEN))
 
 
+def unzip_dataset():
+    """Unzip dataset_and_model.zip if it exists."""
+    print_step("Step: Unzip dataset")
+    zip_path = ROOT / "dataset_and_model.zip"
+
+    if not zip_path.exists():
+        print(c("✗ File not found:", Style.RED), fmt_path(zip_path))
+        return
+
+    output_dir = ROOT / "dataset_and_model"
+
+    if output_dir.exists():
+        print(
+            c("Directory already exists:", Style.YELLOW),
+            fmt_path(output_dir)
+        )
+        confirm = input(
+            c("Overwrite? Type 'YES' to confirm: ", Style.RED)
+        ).strip()
+        if confirm != "YES":
+            print(c("✗ Unzip cancelled.", Style.RED))
+            return
+        shutil.rmtree(output_dir)
+
+    import zipfile
+    print(c("→ Unzipping...", Style.YELLOW))
+    print(f"  Source: {fmt_path(zip_path)}")
+    print(f"  Destination: {fmt_path(output_dir)}")
+
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(output_dir)
+        print(c("✓ Unzip complete.", Style.GREEN))
+    except Exception as e:
+        print(c(f"✗ Unzip failed: {e}", Style.RED))
+
+
 def menu():
     print("\nLeaffliction - Pipeline Menu")
     print("1) Distribution analysis (plots)")
@@ -329,6 +427,12 @@ def menu():
     print("7) Demo augment random image (from dataset/images)")
     print("8) Demo transform random image (from dataset/images)")
     print("9) Clean generated outputs")
+    print("10) Train model (on dataset/images)")
+    print(
+        "11) Test model accuracy "
+        "(on dataset_and_model/augmented_dataset/val)"
+    )
+    print("12) Unzip dataset_and_model.zip")
     print("0) Exit")
 
 
@@ -370,6 +474,14 @@ def run_choice(choice: str):
         demo_transform_random_image(src)
     elif choice == "9":
         clean_pipeline_outputs()
+    elif choice == "10":
+        run_training(src)
+    elif choice == "11":
+        # Test on validation set from augmented dataset
+        test_dir = ROOT / "dataset_and_model" / "augmented_dataset" / "val"
+        run_test_accuracy(test_dir)
+    elif choice == "12":
+        unzip_dataset()
     elif choice == "0":
         print("Bye.")
     else:
@@ -528,6 +640,12 @@ def main():
         ("Demo augment random image (from dataset/images)", "7"),
         ("Demo transform random image (from dataset/images)", "8"),
         ("Clean generated outputs", "9"),
+        ("Train model (on dataset/images)", "10"),
+        (
+            "Test model accuracy (on dataset_and_model/augmented_dataset/val)",
+            "11",
+        ),
+        ("Unzip dataset_and_model.zip", "12"),
         ("Exit", "0"),
     ]
 

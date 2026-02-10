@@ -255,6 +255,10 @@ def main():
     val_transformed = output_val / "transformed"
     val_transformed.mkdir(parents=True, exist_ok=True)
 
+    # Aussi créer un dossier pour les images originales redimensionnées
+    val_original = output_val / "original_resized"
+    val_original.mkdir(parents=True, exist_ok=True)
+
     total_val = 0
     for class_name, splits in split_data.items():
         print(f"Transformation VALIDATION de {class_name}...")
@@ -266,14 +270,19 @@ def main():
 
                 transformer = Transformation(image)
 
+                # Préparer les dossiers de sortie
                 masks_out = val_transformed / "masks" / class_name
                 norm_out = val_transformed / "normalized" / class_name
+                orig_out = val_original / class_name
                 masks_out.mkdir(parents=True, exist_ok=True)
                 norm_out.mkdir(parents=True, exist_ok=True)
+                orig_out.mkdir(parents=True, exist_ok=True)
 
+                # Générer masque et image normalisée
                 masked = transformer.masked_leaf()
                 mask = transformer.mask
 
+                # Calculer features
                 contours, _ = cv.findContours(
                     mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
                 )
@@ -292,19 +301,30 @@ def main():
                 mean_g = float(mean_bgr[1])
                 mean_b = float(mean_bgr[0])
 
+                # Sauvegarder fichiers
                 base_name = img_path.stem
                 ext = img_path.suffix
                 mask_name = f"{base_name}_mask.png"
                 norm_name = f"{base_name}_norm{ext}"
+                orig_name = f"{base_name}{ext}"
 
                 cv.imwrite(str(masks_out / mask_name), mask)
 
+                # Image normalisée redimensionnée
                 norm = cv.resize(
                     masked, (IMG_WIDTH, IMG_HEIGHT),
                     interpolation=cv.INTER_AREA
                 )
                 cv.imwrite(str(norm_out / norm_name), norm)
 
+                # Image originale redimensionnée (sans transformation)
+                orig_resized = cv.resize(
+                    image, (IMG_WIDTH, IMG_HEIGHT),
+                    interpolation=cv.INTER_AREA
+                )
+                cv.imwrite(str(orig_out / orig_name), orig_resized)
+
+                # Ajouter features au CSV
                 features = {
                     "file": str(img_path),
                     "mask_path": str(masks_out / mask_name),
@@ -442,7 +462,7 @@ def main():
 
     num_classes = len(class_names)
 
-    # 12. Construction du modèle CNN
+    # 12. Construction du modèle CNN (optimisé pour CPU)
     print("\n--- Construction du modèle CNN ---")
     model = tf.keras.Sequential([
         tf.keras.layers.Rescaling(
@@ -450,26 +470,33 @@ def main():
         ),
 
         # Bloc 1
-        tf.keras.layers.Conv2D(16, 3, padding='same', activation='relu'),
+        tf.keras.layers.Conv2D(32, 3, padding='same', activation='relu'),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Dropout(0.2),
 
         # Bloc 2
-        tf.keras.layers.Conv2D(32, 3, padding='same', activation='relu'),
+        tf.keras.layers.Conv2D(64, 3, padding='same', activation='relu'),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Dropout(0.3),
 
         # Bloc 3
-        tf.keras.layers.Conv2D(64, 3, padding='same', activation='relu'),
+        tf.keras.layers.Conv2D(128, 3, padding='same', activation='relu'),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Dropout(0.4),
 
         # Classification
         tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(256, activation='relu'),
+        tf.keras.layers.Dropout(0.5),
         tf.keras.layers.Dense(num_classes, activation='softmax')
     ])
 
     # 13. Compilation du modèle
     model.compile(
-        optimizer='adam',
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=False
         ),
@@ -481,16 +508,39 @@ def main():
     # 14. Entraînement
     print("\n--- Entraînement du modèle ---")
     print("(Cela peut prendre du temps sur CPU...)")
-    epochs = 6
-    model.fit(
+
+    # Callbacks pour améliorer l'entraînement
+    callbacks = [
+        # Early stopping: arrête si val_accuracy ne s'améliore pas
+        tf.keras.callbacks.EarlyStopping(
+            monitor='val_accuracy',
+            patience=8,
+            restore_best_weights=True,
+            verbose=1
+        ),
+        # Reduce learning rate si plateau
+        tf.keras.callbacks.ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.5,
+            patience=4,
+            min_lr=1e-7,
+            verbose=1
+        )
+    ]
+
+    epochs = 30
+    _ = model.fit(
         train_ds,
         validation_data=val_ds,
-        epochs=epochs
+        epochs=epochs,
+        callbacks=callbacks
     )
 
     # 15. Sauvegarde du modèle
     print("\n--- Sauvegarde et Export (ZIP) ---")
-    model_filename = "leaf_model.keras"
+    model_folder = "dataset_and_model"
+    os.makedirs(model_folder, exist_ok=True)
+    model_filename = os.path.join(model_folder, "leaf_model.keras")
     model.save(model_filename)
     print(f"Modèle sauvegardé : {model_filename}")
 
@@ -505,7 +555,9 @@ def main():
     os.makedirs(temp_dir)
 
     # Copier le modèle
-    shutil.copy(model_filename, os.path.join(temp_dir, model_filename))
+    shutil.copy(
+        model_filename, os.path.join(temp_dir, "leaf_model.keras")
+    )
 
     # Copier le dataset augmenté
     dataset_folder_name = "augmented_dataset"
@@ -539,7 +591,7 @@ def main():
 
     print(f"✅ SUCCÈS : L'archive '{zip_name}.zip' a été créée.")
     msg = (
-        f"   Contient : {model_filename} + {dataset_folder_name}/ + "
+        f"   Contient : leaf_model.keras + {dataset_folder_name}/ + "
         "features.csv"
     )
     print(msg)
