@@ -14,3 +14,4 @@ dataset_train/
 dataset_predict/
 dataset_train_augmented/
 output_transform/
+dataset_and_model/
