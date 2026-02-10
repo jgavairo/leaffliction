@@ -69,7 +69,10 @@ class Style:
 
 
 def fmt_path(path: Path) -> str:
-    """Return a short, user-friendly path (relative to project root when possible)."""
+    """Return a short, user-friendly path.
+
+    Relative to project root when possible.
+    """
     try:
         return str(path.relative_to(ROOT))
     except Exception:
@@ -84,7 +87,11 @@ def pick_random_image(root_dir: Path):
     """Pick a random image file from dataset/images (recursive)."""
     if not root_dir.exists():
         return None
-    images = [p for p in root_dir.rglob("*") if p.is_file() and is_image_file(p)]
+    images = [
+        p
+        for p in root_dir.rglob("*")
+        if p.is_file() and is_image_file(p)
+    ]
     if not images:
         return None
     return random.choice(images)
@@ -92,23 +99,44 @@ def pick_random_image(root_dir: Path):
 
 def print_step(title: str):
     line = "=" * (len(title) + 8)
-    print(f"\n{c(line, Style.CYAN)}\n{c('=== ' + title + ' ===', Style.CYAN)}\n{c(line, Style.CYAN)}")
+    header = c("=== " + title + " ===", Style.CYAN)
+    print(
+        f"\n{c(line, Style.CYAN)}\n{header}\n{c(line, Style.CYAN)}"
+    )
 
 
 def is_image_file(path: Path) -> bool:
     return path.suffix.lower() in IMAGE_EXTENSIONS
 
 
-def split_dataset(source_dir: Path, train_dir: Path, predict_dir: Path, split_ratio=0.8, seed=42):
+def split_dataset(
+    source_dir: Path,
+    train_dir: Path,
+    predict_dir: Path,
+    split_ratio=0.8,
+    seed=42,
+):
     """Split dataset by class folders into train and predict directories."""
     print_step("Step: Split dataset")
     if not source_dir.exists() or not source_dir.is_dir():
-        print(c("✗ Source directory not found:", Style.RED), fmt_path(source_dir))
+        print(
+            c("✗ Source directory not found:", Style.RED),
+            fmt_path(source_dir),
+        )
         return
 
     # Safety checks
-    if train_dir.resolve() == source_dir.resolve() or predict_dir.resolve() == source_dir.resolve():
-        print(c("✗ Train/Predict directories must be different from source directory.", Style.RED))
+    if (
+        train_dir.resolve() == source_dir.resolve()
+        or predict_dir.resolve() == source_dir.resolve()
+    ):
+        print(
+            c(
+                "✗ Train/Predict directories must be different from source "
+                "directory.",
+                Style.RED,
+            )
+        )
         return
 
     # Clear previous splits to avoid mixing old files
@@ -124,7 +152,11 @@ def split_dataset(source_dir: Path, train_dir: Path, predict_dir: Path, split_ra
         return
 
     for class_dir in class_dirs:
-        images = [p for p in class_dir.iterdir() if p.is_file() and is_image_file(p)]
+        images = [
+            p
+            for p in class_dir.iterdir()
+            if p.is_file() and is_image_file(p)
+        ]
         if not images:
             continue
         random.shuffle(images)
@@ -151,12 +183,21 @@ def augment_dataset(train_dir: Path, aug_out: Path):
     """Call Augmentation.py to balance and augment training dataset."""
     print_step("Step: Augment training dataset")
     if not train_dir.exists():
-        print(c("✗ Train directory not found:", Style.RED), fmt_path(train_dir))
+        print(
+            c("✗ Train directory not found:", Style.RED),
+            fmt_path(train_dir),
+        )
         return
 
-    cmd = [sys.executable, str(SRC / "Augmentation.py"), str(train_dir), "--output-dir", str(aug_out)]
+    cmd = [
+        sys.executable,
+        str(SRC / "Augmentation.py"),
+        str(train_dir),
+        "--output-dir",
+        str(aug_out),
+    ]
     print(c("→ Running augmentation", Style.YELLOW))
-    print(f"  Script: Augmentation.py")
+    print("  Script: Augmentation.py")
     print(f"  Input:  {fmt_path(train_dir)}")
     print(f"  Output: {fmt_path(aug_out)}")
     result = subprocess.run(cmd)
@@ -167,31 +208,51 @@ def augment_dataset(train_dir: Path, aug_out: Path):
 
 
 def transform_dataset(source_dir: Path, output_dir: Path):
-    """Run transformations and export dataset outputs using Transformation.py functions."""
+    """Run transformations and export dataset outputs.
+
+    Uses Transformation.py functions.
+    """
     print_step("Step: Transform dataset")
     if process_directory is None:
-        print(c("✗ Could not import Transformation.process_directory", Style.RED))
+        print(
+            c(
+                "✗ Could not import Transformation.process_directory",
+                Style.RED,
+            )
+        )
         return
     if not source_dir.exists():
-        print(c("✗ Source directory not found:", Style.RED), fmt_path(source_dir))
+        print(
+            c("✗ Source directory not found:", Style.RED),
+            fmt_path(source_dir),
+        )
         return
 
     print(c("→ Transforming:", Style.YELLOW), fmt_path(source_dir))
     print(c("→ Output:", Style.YELLOW), fmt_path(output_dir))
 
-    process_directory(str(source_dir), str(output_dir), mask_only=False, silent=False)
+    process_directory(
+        str(source_dir), str(output_dir), mask_only=False, silent=False
+    )
 
 
 def run_distribution(dataset_dir: Path):
     """Run Distribution.py to generate class distribution plots."""
     print_step("Step: Distribution analysis")
     if not dataset_dir.exists():
-        print(c("✗ Dataset directory not found:", Style.RED), fmt_path(dataset_dir))
+        print(
+            c("✗ Dataset directory not found:", Style.RED),
+            fmt_path(dataset_dir),
+        )
         return
 
-    cmd = [sys.executable, str(SRC / "Distribution.py"), str(dataset_dir)]
+    cmd = [
+        sys.executable,
+        str(SRC / "Distribution.py"),
+        str(dataset_dir),
+    ]
     print(c("→ Running distribution analysis", Style.YELLOW))
-    print(f"  Script: Distribution.py")
+    print("  Script: Distribution.py")
     print(f"  Input:  {fmt_path(dataset_dir)}")
     result = subprocess.run(cmd)
     if result.returncode == 0:
@@ -252,11 +313,19 @@ def clean_pipeline_outputs():
 def menu():
     print("\nLeaffliction - Pipeline Menu")
     print("1) Distribution analysis (plots)")
-    print("2) Split dataset (dataset/images -> dataset_train + dataset_predict)")
-    print("3) Augment training dataset (dataset_train -> dataset_train_augmented)")
+    print(
+        "2) Split dataset (dataset/images -> dataset_train + dataset_predict)"
+    )
+    print(
+        "3) Augment training dataset (dataset_train -> "
+        "dataset_train_augmented)"
+    )
     print("4) Transform train dataset")
     print("5) Transform predict dataset")
-    print("6) Run full pipeline (split -> augment -> transform train -> transform predict)")
+    print(
+        "6) Run full pipeline (split -> augment -> transform train -> "
+        "transform predict)"
+    )
     print("7) Demo augment random image (from dataset/images)")
     print("8) Demo transform random image (from dataset/images)")
     print("9) Clean generated outputs")
@@ -327,7 +396,10 @@ def curses_menu(options):
             subtitle = "Use ↑/↓ or j/k • Enter to select • Esc to quit"
 
             # Compute box size
-            box_width = min(max(len(max([label for label, _ in options], key=len)) + 6, 40), width - 4)
+            label_width = len(
+                max([label for label, _ in options], key=len)
+            )
+            box_width = min(max(label_width + 6, 40), width - 4)
             box_height = len(options) + 6
 
             start_y = max((height - box_height) // 2, 1)
@@ -342,12 +414,23 @@ def curses_menu(options):
                 stdscr.addch(y, start_x + box_width - 1, curses.ACS_VLINE)
             stdscr.addch(start_y, start_x, curses.ACS_ULCORNER)
             stdscr.addch(start_y, start_x + box_width - 1, curses.ACS_URCORNER)
-            stdscr.addch(start_y + box_height - 1, start_x, curses.ACS_LLCORNER)
-            stdscr.addch(start_y + box_height - 1, start_x + box_width - 1, curses.ACS_LRCORNER)
+            stdscr.addch(
+                start_y + box_height - 1, start_x, curses.ACS_LLCORNER
+            )
+            stdscr.addch(
+                start_y + box_height - 1,
+                start_x + box_width - 1,
+                curses.ACS_LRCORNER,
+            )
 
             # Title
             title_x = start_x + (box_width - len(title)) // 2
-            stdscr.addstr(start_y + 1, title_x, title, curses.color_pair(1) | curses.A_BOLD)
+            stdscr.addstr(
+                start_y + 1,
+                title_x,
+                title,
+                curses.color_pair(1) | curses.A_BOLD,
+            )
 
             # Options
             for idx, (label, _value) in enumerate(options):
@@ -355,13 +438,28 @@ def curses_menu(options):
                 line_x = start_x + 2
                 text = f"{idx + 1}. {label}"
                 if idx == current:
-                    stdscr.addstr(line_y, line_x, text.ljust(box_width - 4), curses.color_pair(2) | curses.A_BOLD)
+                    stdscr.addstr(
+                        line_y,
+                        line_x,
+                        text.ljust(box_width - 4),
+                        curses.color_pair(2) | curses.A_BOLD,
+                    )
                 else:
-                    stdscr.addstr(line_y, line_x, text.ljust(box_width - 4), curses.color_pair(4))
+                    stdscr.addstr(
+                        line_y,
+                        line_x,
+                        text.ljust(box_width - 4),
+                        curses.color_pair(4),
+                    )
 
             # Footer help
             footer_x = start_x + (box_width - len(subtitle)) // 2
-            stdscr.addstr(start_y + box_height - 2, footer_x, subtitle, curses.color_pair(3))
+            stdscr.addstr(
+                start_y + box_height - 2,
+                footer_x,
+                subtitle,
+                curses.color_pair(3),
+            )
 
             stdscr.refresh()
 
@@ -379,10 +477,25 @@ def curses_menu(options):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Leaffliction pipeline CLI menu")
-    parser.add_argument("--list", action="store_true", help="List menu options and exit")
-    parser.add_argument("--run", type=str, default=None, help="Run a menu option directly (e.g., 1..9)")
-    parser.add_argument("--text", action="store_true", help="Force text menu (no arrows)")
+    parser = argparse.ArgumentParser(
+        description="Leaffliction pipeline CLI menu"
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List menu options and exit",
+    )
+    parser.add_argument(
+        "--run",
+        type=str,
+        default=None,
+        help="Run a menu option directly (e.g., 1..9)",
+    )
+    parser.add_argument(
+        "--text",
+        action="store_true",
+        help="Force text menu (no arrows)",
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -395,11 +508,23 @@ def main():
 
     options = [
         ("Distribution analysis (plots)", "1"),
-        ("Split dataset (dataset/images -> dataset_train + dataset_predict)", "2"),
-        ("Augment training dataset (dataset_train -> dataset_train_augmented)", "3"),
+        (
+            "Split dataset (dataset/images -> dataset_train + "
+            "dataset_predict)",
+            "2",
+        ),
+        (
+            "Augment training dataset (dataset_train -> "
+            "dataset_train_augmented)",
+            "3",
+        ),
         ("Transform train dataset", "4"),
         ("Transform predict dataset", "5"),
-        ("Run full pipeline (split -> augment -> transform train -> transform predict)", "6"),
+        (
+            "Run full pipeline (split -> augment -> transform train -> "
+            "transform predict)",
+            "6",
+        ),
         ("Demo augment random image (from dataset/images)", "7"),
         ("Demo transform random image (from dataset/images)", "8"),
         ("Clean generated outputs", "9"),
