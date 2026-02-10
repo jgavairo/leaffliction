@@ -72,18 +72,28 @@ if __name__ == "__main__":
                 if img_path.suffix.lower() in img_extensions:
                     shutil.copy2(img_path, merged_class_dir / img_path.name)
 
-    logger("Merge completed. You can now run distribution on the merged folder.\n\n")
+    logger(
+        "Merge completed. You can run distribution on the merged folder.\n\n"
+    )
 
-    logger("Create plots for the merged dataset...")
+    logger(
+        "Create plots for the merged dataset..."
+    )
     merged_class_dirs = parser.list_class_dirs(merged_dir)
     merged_distribution = parser.collect_distribution(merged_class_dirs)
     merged_labels = list(merged_distribution.keys())
     merged_counts = list(merged_distribution.values())
-    plots.plot_bar(merged_labels, merged_counts, merged_dir / "bar_chart_merged.png")
+    plots.plot_bar(
+        merged_labels, merged_counts, merged_dir / "bar_chart_merged.png"
+    )
     logger("Bar chart for merged dataset saved.")
-    plots.plot_pie(merged_labels, merged_counts, merged_dir / "pie_chart_merged.png")
+    plots.plot_pie(
+        merged_labels, merged_counts, merged_dir / "pie_chart_merged.png"
+    )
     logger("Pie chart for merged dataset saved.")
-    logger("All plots for merged dataset generated successfully.\n\n")
+    logger(
+        "All plots for merged dataset generated successfully.\n\n"
+    )
 
     logger("Transformation process started...")
     transformed_dir = Path(args.output_file) / "transformed_data"
@@ -91,5 +101,3 @@ if __name__ == "__main__":
     for class_dir in merged_class_dirs:
         transform_images(class_dir, transformed_dir)
     logger("Transformation process completed.\n\n")
-
-    

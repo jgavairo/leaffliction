@@ -69,12 +69,11 @@ def collect_distribution(data_list: list[Path]):
         data_list (list[Path]): A list of class directories.
 
     Returns:
-        tuple: A tuple containing a list of class directories and a dictionary mapping class names to image counts.
+        tuple: A tuple containing a list of class directories and a
+        dictionary mapping class names to image counts.
     """
     distribution = {}
     for class_dir in data_list:
         nb = count_img_files(class_dir)
         distribution[class_dir.name] = nb
     return distribution
-        
-    
