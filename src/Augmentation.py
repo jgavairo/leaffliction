@@ -83,7 +83,7 @@ def build_demo_augmentations():
         ("rotation", Rotate(limit=100, p=1.0)),
         ("blur", GaussianBlur(blur_limit=50, p=1.0)),
         (
-            "contrast",
+            "hsv_shift",
             HueSaturationValue(
                 hue_shift_limit=0,
                 sat_shift_limit=(60, 60),
@@ -92,7 +92,7 @@ def build_demo_augmentations():
             ),
         ),
         (
-            "scaling",
+            "crop_resize",
             RandomResizedCrop(
                 size=(256, 256),
                 scale=(0.5, 0.7),
@@ -100,7 +100,7 @@ def build_demo_augmentations():
             ),
         ),
         (
-            "illumination",
+            "brightness_contrast",
             RandomBrightnessContrast(
                 brightness_limit=(0.4, 0.4),
                 contrast_limit=0,
