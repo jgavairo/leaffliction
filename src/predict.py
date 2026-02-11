@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import cv2 as cv
+from pathlib import Path
 from tensorflow.keras.preprocessing import image
 from Transformation import Transformation
 
@@ -36,6 +37,9 @@ def main():
     if not os.path.exists(img_path):
         print(f"Erreur : L'image '{img_path}' n'existe pas.")
         return
+    
+    # Extraire la classe réelle (nom du dossier parent)
+    true_class = Path(img_path).parent.name
 
     # 2. Chargement du modèle
     if not os.path.exists(MODEL_PATH):
@@ -92,6 +96,7 @@ def main():
     confidence = 100 * np.max(score)
 
     print("\n------------------------------------------------")
+    print(f"True class: {true_class}")
     print(f"Class predicted: {predicted_class_name}")
     print(f"Confiance : {confidence:.2f}%")
     print("------------------------------------------------")
@@ -104,13 +109,13 @@ def main():
 
     # Image Originale
     plt.subplot(1, 2, 1)
-    plt.title("Original Image")
+    plt.title(f"Original Image\nTrue Class: {true_class}")
     plt.imshow(img_original)
     plt.axis("off")
 
     # Image Transformée (celle vue par le réseau)
     plt.subplot(1, 2, 2)
-    plt.title(f"Transformed (256x256)\nPred: {predicted_class_name}")
+    plt.title(f"Transformed (256x256)\nPredicted: {predicted_class_name}")
     # Convertir BGR vers RGB pour matplotlib
     img_transformed_rgb = cv.cvtColor(img_transformed, cv.COLOR_BGR2RGB)
     plt.imshow(img_transformed_rgb)

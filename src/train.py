@@ -621,6 +621,11 @@ def main():
     shutil.copytree(
         str(val_final), os.path.join(destination_dataset, "val")
     )
+    
+    # Copier aussi le dataset de validation original (non normalisé)
+    shutil.copytree(
+        str(val_original), os.path.join(destination_dataset, "val_original")
+    )
 
     # Copier aussi les fichiers de features
     shutil.copy(
