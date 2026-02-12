@@ -102,30 +102,30 @@ def split_by_groups(class_dir, train_ratio=0.8, seed=123):
 def process_single_image(args):
     """
     Fonction isolée pour traiter une seule image en parallèle.
-    
+
     Args:
-        args: tuple (img_path, masks_out, norm_out, orig_out, img_width, 
+        args: tuple (img_path, masks_out, norm_out, orig_out, img_width,
                      img_height, save_original)
-    
+
     Returns:
         dict: features de l'image ou None en cas d'erreur
     """
     (
-        img_path, masks_out, norm_out, orig_out, 
+        img_path, masks_out, norm_out, orig_out,
         img_width, img_height, save_original
     ) = args
-    
+
     try:
         # Lire l'image
         image = cv.imread(str(img_path))
         if image is None:
             return None
-        
+
         # Appliquer la transformation
         transformer = Transformation(image)
         masked = transformer.masked_leaf()
         mask = transformer.mask
-        
+
         # Calculer les features
         contours, _ = cv.findContours(
             mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE
@@ -139,22 +139,22 @@ def process_single_image(args):
             perimeter = float(cv.arcLength(largest, True))
             x, y, w, h = cv.boundingRect(largest)
             bbox = (int(x), int(y), int(w), int(h))
-        
+
         mean_bgr = cv.mean(image, mask=mask)[:3]
         mean_r = float(mean_bgr[2])
         mean_g = float(mean_bgr[1])
         mean_b = float(mean_bgr[0])
-        
+
         # Préparer les noms de fichiers
         base_name = Path(img_path).stem
         ext = Path(img_path).suffix
         mask_name = f"{base_name}_mask.png"
         norm_name = f"{base_name}_norm{ext}"
-        
+
         # Sauvegarder le masque
         mask_path = Path(masks_out) / mask_name
         cv.imwrite(str(mask_path), mask)
-        
+
         # Sauvegarder l'image normalisée redimensionnée
         norm = cv.resize(
             masked, (img_width, img_height),
@@ -162,8 +162,8 @@ def process_single_image(args):
         )
         norm_path = Path(norm_out) / norm_name
         cv.imwrite(str(norm_path), norm)
-        
-        # Sauvegarder l'image originale redimensionnée si demandé (pour val)
+
+        # Sauvegarder l'image originale redimensionnée (val)
         if save_original and orig_out:
             orig_name = f"{base_name}{ext}"
             orig_resized = cv.resize(
@@ -172,7 +172,7 @@ def process_single_image(args):
             )
             orig_path = Path(orig_out) / orig_name
             cv.imwrite(str(orig_path), orig_resized)
-        
+
         # Retourner les features
         return {
             "file": str(img_path),
@@ -188,7 +188,7 @@ def process_single_image(args):
             "mean_g": mean_g,
             "mean_b": mean_b,
         }
-    
+
     except Exception as e:
         print(f"  Erreur avec {Path(img_path).name}: {e}")
         return None
@@ -268,32 +268,32 @@ def main():
         norm_out = train_transformed / "normalized" / class_name
         masks_out.mkdir(parents=True, exist_ok=True)
         norm_out.mkdir(parents=True, exist_ok=True)
-        
+
         for img_path in splits['train']:
             task = (
                 str(img_path), str(masks_out), str(norm_out), None,
                 IMG_WIDTH, IMG_HEIGHT, False
             )
             train_tasks.append(task)
-    
+
     # Exécution parallèle avec barre de progression
     print(f"Traitement de {len(train_tasks)} images TRAIN...")
     all_train_features = []
-    
+
     with ProcessPoolExecutor() as executor:
         results = list(tqdm(
             executor.map(process_single_image, train_tasks),
             total=len(train_tasks),
             desc="Train transformation"
         ))
-    
+
     # Filtrer les résultats valides et écrire dans le CSV
     all_train_features = [r for r in results if r is not None]
-    
+
     with open(train_features_csv, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=csv_fieldnames)
         writer.writerows(all_train_features)
-    
+
     total_train = len(all_train_features)
     print(f"Total d'images TRAIN transformées : {total_train}")
 
@@ -323,32 +323,32 @@ def main():
         masks_out.mkdir(parents=True, exist_ok=True)
         norm_out.mkdir(parents=True, exist_ok=True)
         orig_out.mkdir(parents=True, exist_ok=True)
-        
+
         for img_path in splits['val']:
             task = (
                 str(img_path), str(masks_out), str(norm_out), str(orig_out),
                 IMG_WIDTH, IMG_HEIGHT, True
             )
             val_tasks.append(task)
-    
+
     # Exécution parallèle avec barre de progression
     print(f"Traitement de {len(val_tasks)} images VALIDATION...")
     all_val_features = []
-    
+
     with ProcessPoolExecutor() as executor:
         results = list(tqdm(
             executor.map(process_single_image, val_tasks),
             total=len(val_tasks),
             desc="Val transformation"
         ))
-    
+
     # Filtrer les résultats valides et écrire dans le CSV
     all_val_features = [r for r in results if r is not None]
-    
+
     with open(val_features_csv, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=csv_fieldnames)
         writer.writerows(all_val_features)
-    
+
     total_val = len(all_val_features)
     print(f"Total d'images VALIDATION transformées : {total_val}")
 
@@ -445,7 +445,7 @@ def main():
             if not images:
                 print(f"  ⚠ {class_dir.name}: AUCUNE IMAGE!")
                 continue
-            
+
             # Vérifier quelques images aléatoires
             sample_imgs = random.sample(images, min(3, len(images)))
             corrupted = 0
@@ -456,9 +456,11 @@ def main():
                         corrupted += 1
                 except Exception:
                     corrupted += 1
-            
+
             if corrupted > 0:
-                print(f"  ⚠ {class_dir.name}: {corrupted}/{len(sample_imgs)} images corrompues!")
+                msg = f"  ⚠ {class_dir.name}: {corrupted}/"
+                msg += f"{len(sample_imgs)} images corrompues!"
+                print(msg)
             else:
                 print(f"  ✓ {class_dir.name}: {len(images)} images OK")
 
@@ -519,19 +521,23 @@ def main():
     num_classes = len(class_names)
 
     # 12. Construction du modèle avec Transfer Learning (MobileNetV2)
-    print("\n--- Construction du modèle avec Transfer Learning (MobileNetV2) ---")
-    
+    msg = "\n--- Construction du modèle avec Transfer Learning "
+    msg += "(MobileNetV2) ---"
+    print(msg)
+
     # Charger MobileNetV2 pré-entraîné sur ImageNet sans le top
     base_model = tf.keras.applications.MobileNetV2(
         input_shape=(IMG_HEIGHT, IMG_WIDTH, 3),
         include_top=False,
         weights='imagenet'
     )
-    
+
     # Geler les poids du modèle de base
     base_model.trainable = False
-    print(f"Poids du modèle de base gelés: {len(base_model.layers)} layers")
-    
+    msg = "Poids du modèle de base gelés: "
+    msg += f"{len(base_model.layers)} layers"
+    print(msg)
+
     # Construire le modèle complet
     # Note: MobileNetV2 preprocess_input fait: (x / 127.5) - 1.0
     model = tf.keras.Sequential([
@@ -583,7 +589,7 @@ def main():
         validation_data=val_ds,
         epochs=epochs,
         callbacks=callbacks,
-        class_weight=class_weight  # Utilise les poids pour gérer le déséquilibre
+        class_weight=class_weight  # Gère le déséquilibre
     )
 
     # 15. Sauvegarde du modèle
@@ -621,10 +627,11 @@ def main():
     shutil.copytree(
         str(val_final), os.path.join(destination_dataset, "val")
     )
-    
+
     # Copier aussi le dataset de validation original (non normalisé)
     shutil.copytree(
-        str(val_original), os.path.join(destination_dataset, "val_original")
+        str(val_original),
+        os.path.join(destination_dataset, "val_original")
     )
 
     # Copier aussi les fichiers de features

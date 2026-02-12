@@ -37,7 +37,7 @@ def main():
     if not os.path.exists(img_path):
         print(f"Erreur : L'image '{img_path}' n'existe pas.")
         return
-    
+
     # Extraire la classe réelle (nom du dossier parent)
     true_class = Path(img_path).parent.name
 
