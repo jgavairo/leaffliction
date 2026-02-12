@@ -418,12 +418,6 @@ def menu():
         "3) Augment training dataset (dataset_train -> "
         "dataset_train_augmented)"
     )
-    print("4) Transform train dataset")
-    print("5) Transform predict dataset")
-    print(
-        "6) Run full pipeline (split -> augment -> transform train -> "
-        "transform predict)"
-    )
     print("7) Demo augment random image (from dataset/images)")
     print("8) Demo transform random image (from dataset/images)")
     print("9) Clean generated outputs")
@@ -630,13 +624,6 @@ def main():
             "dataset_train_augmented)",
             "3",
         ),
-        ("Transform train dataset", "4"),
-        ("Transform predict dataset", "5"),
-        (
-            "Run full pipeline (split -> augment -> transform train -> "
-            "transform predict)",
-            "6",
-        ),
         ("Demo augment random image (from dataset/images)", "7"),
         ("Demo transform random image (from dataset/images)", "8"),
         ("Clean generated outputs", "9"),
@@ -662,8 +649,15 @@ def main():
         except KeyboardInterrupt:
             print("\nBye.")
             return
-        except Exception:
-            print("\n⚠ Arrow-key menu unavailable. Falling back to text menu.")
+        except Exception as e:
+            print(
+                "\n⚠ Arrow-key menu unavailable. Falling back to text menu."
+            )
+            print(f"Reason: {e}")
+            print(
+                "Hint: curses needs a real TTY and a valid TERM. "
+                "Try running in a normal terminal or use --text."
+            )
 
     # Fallback to simple text menu
     try:
